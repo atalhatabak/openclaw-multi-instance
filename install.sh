@@ -73,28 +73,31 @@ $COMPOSE run --rm --user root --entrypoint sh openclaw-cli -c \
   'find /home/node/.openclaw -xdev -exec chown node:node {} +; \
    [ -d /home/node/.openclaw/workspace/.openclaw ] && chown -R node:node /home/node/.openclaw/workspace/.openclaw || true'
 
-# $COMPOSE run --rm openclaw-cli \ config set gateway.mode local >/dev/null
-
 # openclaw.json edit for browser and coder profile
 $COMPOSE run --rm --entrypoint sh openclaw-cli -c "
-  /usr/local/bin/openclaw config set gateway.mode local >/dev/null
-  /usr/local/bin/openclaw config set gateway.bind $OPENCLAW_GATEWAY_BIND
-  /usr/local/bin/openclaw config set gateway.controlUi.allowedOrigins '[\"http://localhost:'"${OPENCLAW_GATEWAY_PORT}"'\",\"http://127.0.0.1:'"${OPENCLAW_GATEWAY_PORT}"'\"]' --strict-json
-  /usr/local/bin/openclaw config set tools.profile coding
-  /usr/local/bin/openclaw onboard --accept-risk --flow quickstart --skip-skills --skip-ui --skip-channels  --skip-daemon --auth-choice apiKey --token-provider openrouter --token $OPENROUTER_API_KEY
-  /usr/local/bin/openclaw models set openrouter/stepfun/step-3.5-flash:free
-  /usr/local/bin/openclaw config set browser.enabled true
-  /usr/local/bin/openclaw config set browser.executablePath /usr/bin/google-chrome
-  /usr/local/bin/openclaw config set browser.headless true
-  /usr/local/bin/openclaw config set browser.noSandbox true
-  /usr/local/bin/openclaw config set browser.defaultProfile openclaw
-  /usr/local/bin/openclaw config set channels.telegram.enabled true
-  /usr/local/bin/openclaw config set channels.telegram.botToken $TELEGRAM_BOT_TOKEN
-  /usr/local/bin/openclaw config set channels.telegram.dmPolicy allowlist
-  /usr/local/bin/openclaw config set channels.telegram.allowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
-  /usr/local/bin/openclaw config set channels.telegram.groupAllowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
-  /usr/local/bin/openclaw config set channels.telegram.groupPolicy allowlist
-  /usr/local/bin/openclaw config set channels.telegram.streaming partial
+  echo 'config setting: gateway mode/bind/allowed-origins'
+  /usr/local/bin/openclaw config set gateway.mode local 
+  /usr/local/bin/openclaw config set gateway.bind $OPENCLAW_GATEWAY_BIND 
+  /usr/local/bin/openclaw config set gateway.controlUi.allowedOrigins '[\"http://localhost:'"${OPENCLAW_GATEWAY_PORT}"'\",\"http://127.0.0.1:'"${OPENCLAW_GATEWAY_PORT}"'\"]' --strict-json 
+  echo 'Profile change with coding, Onboard starting'
+  /usr/local/bin/openclaw config set tools.profile coding 
+  /usr/local/bin/openclaw onboard --accept-risk --flow quickstart --skip-skills --skip-ui --skip-channels  --skip-daemon --auth-choice apiKey --token-provider openrouter --token $OPENROUTER_API_KEY 
+  echo 'Model, browser channels config'
+  /usr/local/bin/openclaw models set openrouter/stepfun/step-3.5-flash:free 
+  /usr/local/bin/openclaw config set browser.enabled true 
+  /usr/local/bin/openclaw config set browser.executablePath /usr/bin/google-chrome 
+  /usr/local/bin/openclaw config set browser.headless true 
+  /usr/local/bin/openclaw config set browser.noSandbox true 
+  /usr/local/bin/openclaw config set browser.defaultProfile openclaw 
+  /usr/local/bin/openclaw browser start
+  /usr/local/bin/openclaw config set channels.telegram.enabled true 
+  /usr/local/bin/openclaw config set channels.telegram.botToken $TELEGRAM_BOT_TOKEN 
+  /usr/local/bin/openclaw config set channels.telegram.dmPolicy allowlist 
+  /usr/local/bin/openclaw config set channels.telegram.allowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json 
+  /usr/local/bin/openclaw config set channels.telegram.groupAllowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json 
+  /usr/local/bin/openclaw config set channels.telegram.groupPolicy allowlist 
+  /usr/local/bin/openclaw config set channels.telegram.streaming partial 
+  echo 'probably all done .d'
 "
 
 # ---- 6) Pull image & start gateway ----
@@ -109,4 +112,4 @@ echo "  instance: $INSTANCE_NUMBER"
 echo "  project : $PROJECT_NAME"
 echo "  volume  : $VOLUME_NAME"
 echo "  ports   : $OPENCLAW_GATEWAY_PORT, $OPENCLAW_BRIDGE_PORT"
-echo "  Web Dashboard UI   : http://127.0.0.1:$OPENCLAW_GATEWAY_PORT/?token=$OPENCLAW_GATEWAY_TOKEN"
+echo "  Web Dashboard UI   : http://127.0.0.1:$OPENCLAW_GATEWAY_PORT/#token=$OPENCLAW_GATEWAY_TOKEN"
