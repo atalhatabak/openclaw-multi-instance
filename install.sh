@@ -60,7 +60,7 @@ set +a
 echo "Building custom OpenClaw image..."
 DOCKER_BUILDKIT=1 docker build --pull -t atalhatabak/openclaw-extras:latest .
 
-# ---- 5) Create named volume (idempotent) ----
+# ---- 5) Create nqamed volume (idempotent) ----
 docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || \
   docker volume create "$OPENCLAW_HOME_VOLUME" >/dev/null
 echo "Volume ready: $OPENCLAW_HOME_VOLUME"
