@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     ca-certificates \
     unzip \
+    git \
     vim \
     fonts-liberation \
     libasound2 \
