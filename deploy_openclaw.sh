@@ -232,7 +232,7 @@ compose_cmd_tools=(docker compose -p "$project_name" --env-file "$env_file" --pr
   echo 'config setting: gateway mode/bind/allowed-origins'
   /usr/local/bin/openclaw config set gateway.mode local
   /usr/local/bin/openclaw config set gateway.bind $OPENCLAW_GATEWAY_BIND
-  /usr/local/bin/openclaw config set gateway.controlUi.allowedOrigins '[\"http://localhost:${OPENCLAW_GATEWAY_PORT}\",\"http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}\"]' --strict-json
+  /usr/local/bin/openclaw config set gateway.controlUi.allowedOrigins '[\"http://localhost:${OPENCLAW_GATEWAY_PORT}\",\"http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}\",\"http://$DOMAIN\",\"https://$DOMAIN\"]' --strict-json
 
   echo 'Profile change with coding, Onboard starting'
   /usr/local/bin/openclaw config set tools.profile coding
