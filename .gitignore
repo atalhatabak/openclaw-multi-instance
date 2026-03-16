@@ -1,3 +1,7 @@
 env.base
 .env*
-InstanceNumber
+openclaw_instances.db
+logs/
+generated/
+__pycache__/
+*.pyc

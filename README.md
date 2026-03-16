@@ -1,53 +1,361 @@
-# Openclaw Multi Instance With Docker
+# OpenClaw Multi‑Instance Admin
 
-## Nedir, Nasıl Kullanılır.
-Openclaw'ı tek script ile nerderse hazır şekilde dockerda ayağa kaldıran script.
-Her çalışmada yeni bir port ile ekstra konteyner açıyor. 
+Flask‑based admin panel and deployment helper for running multiple **OpenClaw** instances on a single machine using Docker.
 
-## Kurulumu, Kullanımı, Bağımlılıklar.
-*Linux:* Docker ve docker compose kurulu sistemde `./install.sh` ile script çalıştırılarak kullanılabilir.
-*Windows:* Docker desktop ve git/git-bash kurulu sistemde ./install.sh script'i bash ile çalıştırılarak kullanılabilir.
-> Script bash ile yazıldığı için git bash kurulu olması gerekiyor.
+This project wraps the original OpenClaw Docker image with:
+- a small **SQLite** metadata DB,
+- a **Flask** dashboard,
+- and **bash** scripts that manage Docker + per‑instance config.
 
-## 1: Openclaw Normal Kurulum Nasıl Çalışıyor.
-openclaw'ın github adresinde docker-setup.sh isimli bir bash script'i var. Bu script hızlı bir şekilde openclaw konteynar'ı ayağa kaldırabiliyor. Sırayla şu işlemleri yapıyor.
-1. Kaynak koddan docker image build ediyor. 
-2. openclaw'ın home dizini olarak konteyner içindeki `/home/node/.openclaw` dizinini host makinedeki dizin olarak mount ediyor
-> /home/node/.openclaw: Openclaw temel conf dizini, ortak kullanılan kalıcı dizin
-3. Dizinin izinlerini ve sahipliğini ayarlıyor. 
-4. .env de belirtilen değişkenleri script'e aktarıyor (gateway token, API'lar ++)
-4. Konteyner'ı ayağa kaldırıyor
-5. Geçici konteynerlar açarak (kalıcı dizin mount edilmiş) openclaw'da config değişikliği yapıyor (allowed origins, bind vs)
-6. Son konteyner'ı onbound (kurulum ekranı) ile ayağa kaldırıyor
+The goal is a **simple, pragmatic “Ops UI”**: create, update, start/stop, delete instances, manage devices, and generate nginx configs — without touching the shell for every action.
 
-## Bu kurulumdaki eksik noktalar
-1. browser tool'unun kullanılması için browser kurulumu eksik.
-2. Yeni skill yüklenmesi için clawdhub yazılımı eksik.
-3. Bazı skillerin kullandığı yazılımların (örn himalaya mail client) yüklenmesi için homebrew yazılımı eksik ++
-> Bu eksikliklerin elle düzenlenmesi gerekiyor, bunun için ortak dizinde veya konteyner içinde manuel müdahele lazım, bazı durumlarda konteyner'a root olarak girip `uid 0` yeni paket yüklenmesi gerekiyor.
+---
 
-## Şuanki versiyon ne yapıyor.
-1. ghcr.io/openclaw/openclaw:latest adresindeki latest versiyonu baz alarak resmi openclaw docker image'ını indiriyor.
-2. Dockerfile dosyası oluşturularak var olan image'a google chrome, clawhub ve bazı sistem araçlarının yüklendiği yeni image oluşturuyor.
-> her çalışmada orjinal image'ı pull ile çekiyor. Güncelleme varsa son versiyonu kuruyor.
-3. Host makinedeki ortak dizin windows hostta izin ve uyum sorunu yaşadığından folder mount yerine docker volume oluşturuyor ve ortak/kalıcı dizin olarak `/home/node/.openclaw` dizinini oraya bağlıyor.
-> Bunun bir sorunu windows üzerinde bu bölume mount edilemiyor. Docker desktop uygulaması ile görüntülenebiliyor sadece
-4. env.base dosyasındaki temel değişkenleri (API key Project name vs) alıp üzerine gateway/bridge port gateway token ekleyerek .env.x şeklinde yeni dosya oluşturuyor (x proje sayısına göre değişiyor.) InstanceNumber dosyasına proje sayısını kaydediyor, sonraki çalışmada kullanılması için.
-5. `/home/node/.openclaw` dizininin izin ve sahipliği ayarlanıyor.
-6. Bu dizinin mount edildiği geçici bir konteyner açarak config dizininde aşağıdaki düzenlemeri yapıyor.
-    1. bind ve allowed origins (izin verilen girişler) tanımlamasını yapıyor.
-    2. openclaw.json dosyasında profile'ı coding olarak değiştiriyor.
-    > son güncellemede varsayılan profile message olarak geliyor ve sadece chatbot olarak çalışıyor. Komut çalıştırmak vs birşeyler yapabilmesi için profile'in bu şekilde kaydedilmesi gerekiyor.
-    3. Onboard ekranını model, channel ++ seçimlerini içermeyecek şekilde ve sağlayıcı/token bilgilerini parametre olarak vererek açıyor. Çünkü bu bilgileri .env.x dosyasından alıyoruz ve kendimiz ekliyoruz.
-    4. model seçimi yapılıyor.
-    5. browser config (profile seçimi, docker üzerinde browser yolu) yapılıyor ve enable hale getiriliyor.
-    6. Channel ayarlamaları yapılıyor (varsayılan telegram)
-7. Tüm ayarlamalar bittikten sonra geçici konteyner kapanıyor normal servisi ayağa kaldırıyor. En sonda url ve token bilgisini yazıdırıyor.
+## Features
 
-## Eksikler.
-Şu hali ile konteyner ayağa kalktığında
-* Yeni cihaz girişinde token girildikten sonra konteyner için cli üzerinden cihazı onaylamamız gerekiyor. Halen otomatikleştirilmedi
-* Var olan konteynerların güncellenmesi desteklenmiyor 
-> Docker pull -> extented image build sonrası kullanılan konteyner silinecek ve yerine güncel konteyner ayağa kalkacak `/home/node/.openclaw` dizini güncel konteyner'a bağlanacak
+- **Instance management**
+  - Create new OpenClaw instances with:
+    - domain / subdomain (`for` → `for.example.com`)
+    - OpenRouter API key
+    - optional gateway token
+    - optional Telegram settings
+  - List all instances with:
+    - domain, project name, ports, volume, version, status
+  - Primary actions per instance:
+    - Open Domain
+    - Open Gateway UI
+    - Start / Stop
+    - Update (recreate with new image)
+    - Delete (containers, volume, DB row)
 
+- **Device approval (Web UI)**
+  - “Devices” button per instance opens a modal:
+    - lists **pending** requests (JSON from `openclaw devices list --json`)
+    - one‑click **Approve** per request (`openclaw devices approve <requestId>`)
+    - also shows **paired** devices for reference
 
+- **Version management**
+  - Uses upstream `ghcr.io/openclaw/openclaw` as base.
+  - Builds a custom image `atalhatabak/openclaw-extras:latest` with extra tools (Chrome, etc).
+  - On **create**:
+    - detects OpenClaw version via `openclaw --version` and stores it in DB.
+  - On **update**:
+    - pulls latest image, rebuilds custom image,
+    - updates DB `version` field to match the new image version.
+  - UI shows a small “OpenClaw X.Y.Z” indicator.
+
+- **Logging**
+  - Every important command (deploy, update, start/stop, delete, devices, version checks) is:
+    - executed via a central helper,
+    - logged to a timestamped file under `logs/<action_type>/`,
+    - recorded in `operation_logs` table (instance, action, path, status).
+  - Logs can be browsed from the UI via the “Logs” button.
+
+- **nginx config generation**
+  - For each instance, generates a vhost file:
+    - `generated/nginx/<domain>.conf`
+    - mapping `<domain> -> http://127.0.0.1:<gateway_port>`
+  - No automatic nginx reload — files are for your future nginx setup.
+
+- **Telegram optional**
+  - Telegram fields are **optional** on the form.
+  - If both `bot token` and `allow from` are present:
+    - Telegram channel is configured.
+  - If not, Telegram is disabled and Web Dashboard is the primary flow.
+
+- **Minimal, modern UI**
+  - Single‑page layout with:
+    - top “Create instance” card,
+    - stacked instance cards,
+    - search (domain / project / port / status),
+    - expandable details (safe JSON + docker ps info),
+    - light/dark theme toggle.
+
+---
+
+## Architecture
+
+- **Python / Flask**
+  - `app.py` – main Flask app and routes
+  - `db.py` – SQLite connection + schema init/migrations
+  - `instance_db.py` – CLI helper used by bash scripts
+
+- **Services (Python)**
+  - `services/command_service.py` – subprocess wrapper + file logging + DB `operation_logs`
+  - `services/docker_service.py` – docker compose / docker exec helpers
+  - `services/device_service.py` – `openclaw devices list --json` + approve
+  - `services/version_service.py` – detect OpenClaw image / instance version
+  - `services/nginx_service.py` – domain resolution + nginx vhost generation
+  - `services/log_service.py` – log file path helpers + secret masking
+
+- **Web UI**
+  - `templates/index.html` – single page dashboard
+  - `static/style.css` – modern minimal styling + light/dark theme
+  - `static/app.js` – search, modals, devices, logs, theme, version label
+
+- **Shell scripts**
+  - `deploy_openclaw.sh` – create a new instance:
+    - allocates ports from DB
+    - builds/refreshes custom image
+    - prepares env file
+    - runs OpenClaw initial config in a temporary container
+    - starts services and inserts DB row
+    - generates nginx vhost
+  - `update_openclaw.sh` – update an existing instance:
+    - reads instance data from DB
+    - pulls latest image
+    - rebuilds custom image
+    - restarts containers with the same ports + volume + tokens
+
+---
+
+## Requirements
+
+- Docker + Docker Compose
+- Python 3.10+ (recommended)
+- Bash (on Windows, Git Bash or WSL is fine; UI calls `bash` for scripts)
+
+---
+
+## Quick Start
+
+1. **Clone the repo**
+
+```bash
+https://github.com/atalhatabak/openclaw-multi-instance.git
+cd openclaw-multi-instance
+```
+
+2. **(Optional) Set env vars**
+
+```bash
+export  OPENCLAW_BASE_DOMAIN=example.com
+export  OPENCLAW_DEFAULT_VERSION=2026.3.2
+```
+
+3. **Run the admin UI**
+
+```bash
+python app.py
+```
+
+4. **Open the dashboard**
+
+- Go to `http://127.0.0.1:5050`
+- Use the **Create New Instance** card:
+  - Subdomain/domain: `for` → `for.example.com`
+  - OpenRouter API Key: `or-v1-...`
+  - Optional: gateway token
+  - Optional: Telegram token + allow from
+
+5. **Manage instances**
+
+- Use buttons on each card:
+  - **Open Domain** – browser to instance domain
+  - **Open Gateway** – direct link with token fragment
+  - **Start / Stop / Update / Delete**
+  - **Cihazlar (Devices)** – list & approve pending devices
+  - **Logs** – see recent operation logs
+
+---
+
+## Production Notes
+
+- This is intentionally a **small, pragmatic** admin tool:
+  - no ORM (plain sqlite3),
+  - no heavy frontend framework,
+  - no background queue.
+- Use nginx (or another reverse proxy) to:
+  - point your real domain to the generated vhost configs,
+  - terminate TLS,
+  - handle rate limiting, etc.
+- For production:
+  - change `FLASK_SECRET_KEY`,
+  - put the Flask app behind a proper reverse proxy,
+  - make sure Docker and the host firewall are locked down.
+
+---
+
+---
+
+## Türkçe
+
+Bu proje, tek bir makine üzerinde birden fazla **OpenClaw** instance’ını Docker ile çalıştırmak için yazılmış küçük bir **admin paneli ve otomasyon katmanı**dır.
+
+Ana bileşenler:
+- **Flask** tabanlı web arayüzü (dashboard),
+- instance meta verileri için **SQLite** veritabanı,
+- Docker ve OpenClaw ayarlarını yöneten **bash script’leri**.
+
+Hedef: Shell’e her seferinde girmeden, **pratik bir “Ops UI”** ile instance oluşturma/güncelleme/başlatma/durdurma/silme, cihaz onaylama ve nginx konfig üretimi yapmak.
+
+---
+
+### Özellikler
+
+- **Instance yönetimi**
+  - Yeni OpenClaw instance oluştur:
+    - domain / subdomain (`for` → `for.example.com`)
+    - OpenRouter API key
+    - opsiyonel gateway token
+    - opsiyonel Telegram ayarları
+  - Tüm instance’ları listele:
+    - domain, proje adı, portlar, volume, versiyon, durum
+  - Kart başına aksiyonlar:
+    - Domain’i aç
+    - Gateway UI aç
+    - Start / Stop
+    - Update (yeni image ile recreate)
+    - Delete (container + volume + DB kaydı)
+
+- **Cihaz onayı (Web UI’den)**
+  - Her instance için **“Cihazlar”** butonu:
+    - `openclaw devices list --json` çıktısındaki **pending** kayıtları listeler
+    - her satırda tek tıkla **Onayla** (`openclaw devices approve <requestId>`)
+    - **paired** cihazları da bilgi amaçlı gösterir
+
+- **Versiyon yönetimi**
+  - Temel image: `ghcr.io/openclaw/openclaw`.
+  - Üzerinden `atalhatabak/openclaw-extras:latest` isminde ekstra araçlarla (Chrome vb.) genişletilmiş image build edilir.
+  - **Create** sırasında:
+    - image içinden `openclaw --version` okunur ve DB’de `version` alanına yazılır.
+  - **Update** sırasında:
+    - yeni image pull + custom image rebuild,
+    - upstream image versiyonu tekrar okunur,
+    - ilgili instance’ın DB’deki `version` alanı güncellenir.
+  - UI’da küçük bir “OpenClaw X.Y.Z” etiketi görünür.
+
+- **Logging**
+  - Önemli tüm işlemler:
+    - deploy, update, start/stop, delete,
+    - devices list/approve,
+    - versiyon kontrolleri
+  - Ortak bir komut çalıştırma servisi ile:
+    - `logs/<action_type>/` altında timestamp’li log dosyalarına yazılır,
+    - `operation_logs` tablosuna (instance, action, path, status) satır eklenir.
+  - UI’daki **“Logs”** butonu ile son logları görebilirsin.
+
+- **nginx konfig üretimi**
+  - Her instance için:
+    - `generated/nginx/<domain>.conf` dosyası oluşturulur.
+    - `<domain> -> http://127.0.0.1:<gateway_port>` reverse proxy ayarı içerir.
+  - nginx reload otomatik yapılmaz; bu dosyalar ilerideki nginx kurulumun için hazır şablonlardır.
+
+- **Telegram opsiyonel**
+  - Formdaki Telegram alanları **zorunlu değil**.
+  - Bot token + allow from ikisi de doluysa:
+    - Telegram kanalı configure edilir.
+  - Değilse, Telegram devre dışı bırakılır; ana kullanım Web Dashboard üzerinden gider.
+
+- **Minimal, modern UI**
+  - Tek sayfalık arayüz:
+    - üstte “Create instance” kartı,
+    - altta dikey stack edilmiş instance kartları,
+    - arama (domain / proje / port / durum),
+    - açılır “Details” kısmı (maskelenmiş JSON + docker ps bilgisi),
+    - Light/Dark tema seçici.
+
+---
+
+### Mimari
+
+- **Python / Flask**
+  - `app.py` – ana Flask uygulaması ve route’lar
+  - `db.py` – SQLite connection + schema init/migration
+  - `instance_db.py` – bash script’lerin kullandığı basit DB CLI aracı
+
+- **Servis katmanı (Python)**
+  - `services/command_service.py` – subprocess wrapper + dosya loglama + `operation_logs`
+  - `services/docker_service.py` – docker compose / docker exec yardımcıları
+  - `services/device_service.py` – `openclaw devices list --json` + approve işlemleri
+  - `services/version_service.py` – OpenClaw image / instance versiyon tespiti
+  - `services/nginx_service.py` – domain çözümleme + nginx vhost üretimi
+  - `services/log_service.py` – log dosya yolları + secret maskeleme
+
+- **Web UI**
+  - `templates/index.html` – tek sayfa dashboard
+  - `static/style.css` – modern minimal tasarım + light/dark tema
+  - `static/app.js` – arama, modal’lar, cihazlar, loglar, tema, versiyon etiketi
+
+- **Shell script’leri**
+  - `deploy_openclaw.sh` – yeni instance oluşturur:
+    - DB’den port tahsis eder
+    - custom image build/refresh
+    - env dosyası üretir
+    - geçici container ile OpenClaw konfig’ini yapar
+    - servisleri ayağa kaldırır, DB’ye kayıt ekler
+    - nginx vhost dosyası üretir
+  - `update_openclaw.sh` – var olan instance’ı günceller:
+    - instance verisini DB’den okur
+    - son image’ı çeker
+    - custom image’i tekrar build eder
+    - aynı port/volume/token’larla yeni container’ı ayağa kaldırır
+
+---
+
+### Gereksinimler
+
+- Docker + Docker Compose
+- Python 3.10+ (önerilir)
+- Bash
+  - Windows’ta Git Bash veya WSL kullanılabilir; UI `bash` üzerinden script çağırır.
+
+---
+
+### Hızlı Başlangıç
+
+1. **Projeyi klonla**
+
+```bash
+https://github.com/atalhatabak/openclaw-multi-instance.git
+cd openclaw-multi-instance
+```
+
+2. **(Opsiyonel) Ortam değişkenlerini ayarla**
+
+```bash
+export  OPENCLAW_BASE_DOMAIN=example.com
+export  OPENCLAW_DEFAULT_VERSION=2026.3.2
+```
+
+3. **Admin UI’ı çalıştır**
+
+```bash
+python app.py
+```
+
+4. **Dashboard’a gir**
+
+- Tarayıcıda `http://127.0.0.1:5050` aç.
+- **Create New Instance** kartını doldur:
+  - Subdomain/domain: `for` → `for.example.com`
+  - OpenRouter API Key: `or-v1-...`
+  - İsteğe bağlı: gateway token
+  - İsteğe bağlı: Telegram token + allow from
+
+5. **Instance’ları yönet**
+
+- Her karttaki butonları kullan:
+  - **Open Domain**
+  - **Open Gateway**
+  - **Start / Stop / Update / Delete**
+  - **Cihazlar** – pending cihazları gör & onayla
+  - **Logs** – son işlem loglarını gör
+
+---
+
+### Production notları
+
+- Bilerek **aşırı basit** tutulmuş bir admin aracı:
+  - ORM yok (doğrudan sqlite3),
+  - ağır frontend framework yok,
+  - background kuyruk yok.
+- Production için:
+  - `FLASK_SECRET_KEY` değerini mutlaka değiştir,
+  - Flask’ı bir reverse proxy (nginx vb.) arkasında çalıştır,
+  - Docker host’unu ve firewall’u sıkılaştır.
+- nginx tarafında:
+  - `generated/nginx/*.conf` dosyalarını kendi nginx kurulumuna include edip,
+  - TLS / rate limit gibi ayarları orada yönetebilirsin.
+
+---
