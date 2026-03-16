@@ -11,6 +11,12 @@ COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 LOCK_FILE="${OPENCLAW_LOCK_FILE:-$ROOT_DIR/.openclaw_deploy.lock}"
+BASE_DOMAIN="${OPENCLAW_BASE_DOMAIN:-mebsclaw.com}"
+
+LOG_DIR="${OPENCLAW_LOG_DIR:-$ROOT_DIR/logs/deploy}"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_deploy.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 DOMAIN=""
 VERSION="latest"
@@ -18,9 +24,12 @@ TELEGRAM_BOT_TOKEN=""
 TELEGRAM_ALLOW_FROM=""
 OPENROUTER_API_KEY=""
 OPENCLAW_GATEWAY_TOKEN=""
-OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:latest"
+# Runtime image used by docker-compose services.
+# We always build/refresh atalhatabak/openclaw-extras:latest from the
+# upstream ghcr.io/openclaw/openclaw:latest before starting containers.
+OPENCLAW_IMAGE="atalhatabak/openclaw-extras:latest"
 OPENCLAW_GATEWAY_BIND="lan"
-CHANNEL_CHOICE="telegram"
+CHANNEL_CHOICE="web"
 
 usage() {
   cat <<EOF
@@ -87,9 +96,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$DOMAIN" ]] || fail "--domain is required"
-[[ -n "$TELEGRAM_BOT_TOKEN" ]] || fail "--telegram-bot-token is required"
-[[ -n "$TELEGRAM_ALLOW_FROM" ]] || fail "--telegram-allow-from is required"
 [[ -n "$OPENROUTER_API_KEY" ]] || fail "--openrouter-api-key is required"
+
+if [[ "$DOMAIN" != *.* ]]; then
+  DOMAIN="${DOMAIN}.${BASE_DOMAIN}"
+fi
 
 have docker || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
@@ -178,9 +189,15 @@ OPENCLAW_BRIDGE_PORT=$bridge_port
 OPENCLAW_GATEWAY_BIND=$OPENCLAW_GATEWAY_BIND
 OPENCLAW_IMAGE=$OPENCLAW_IMAGE
 OPENROUTER_API_KEY=$OPENROUTER_API_KEY
+EOF
+
+if [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_ALLOW_FROM" ]]; then
+  cat >> "$env_file" <<EOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 TELEGRAM_ALLOW_FROM=$TELEGRAM_ALLOW_FROM
 EOF
+  CHANNEL_CHOICE="telegram"
+fi
 
 set -a
 # shellcheck disable=SC1090
@@ -193,8 +210,6 @@ set +a
 : "${OPENCLAW_GATEWAY_BIND:?missing}"
 : "${OPENCLAW_IMAGE:?missing}"
 : "${OPENROUTER_API_KEY:?missing}"
-: "${TELEGRAM_BOT_TOKEN:?missing}"
-: "${TELEGRAM_ALLOW_FROM:?missing}"
 
 echo "Building custom OpenClaw image..."
 
@@ -207,12 +222,13 @@ docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || {
 echo "Volume ready: $OPENCLAW_HOME_VOLUME"
 
 compose_cmd=(docker compose -p "$project_name" --env-file "$env_file")
+compose_cmd_tools=(docker compose -p "$project_name" --env-file "$env_file" --profile tools)
 
-"${compose_cmd[@]}" run --rm --user root --entrypoint sh openclaw-cli -c \
+"${compose_cmd_tools[@]}" run --rm --user root --entrypoint sh openclaw-cli -c \
   'find /home/node/.openclaw -xdev -exec chown node:node {} +; \
    [ -d /home/node/.openclaw/workspace/.openclaw ] && chown -R node:node /home/node/.openclaw/workspace/.openclaw || true'
 
-"${compose_cmd[@]}" run --rm --entrypoint sh openclaw-cli -c "
+"${compose_cmd_tools[@]}" run --rm --entrypoint sh openclaw-cli -c "
   echo 'config setting: gateway mode/bind/allowed-origins'
   /usr/local/bin/openclaw config set gateway.mode local
   /usr/local/bin/openclaw config set gateway.bind $OPENCLAW_GATEWAY_BIND
@@ -220,7 +236,7 @@ compose_cmd=(docker compose -p "$project_name" --env-file "$env_file")
 
   echo 'Profile change with coding, Onboard starting'
   /usr/local/bin/openclaw config set tools.profile coding
-  /usr/local/bin/openclaw onboard --non-interactive --accept-risk --flow quickstart --gateway-auth token --gateway-token $OPENCLAW_GATEWAY_TOKEN --skip-channels --skip-daemon --skip-skills --skip-ui --auth-choice apiKey --token-provider openrouter --token $OPENROUTER_API_KEY
+  /usr/local/bin/openclaw onboard --non-interactive --accept-risk --openrouter-api-key $OPENROUTER_API_KEY
 
   echo 'Model, browser channels config'
   /usr/local/bin/openclaw models set openrouter/stepfun/step-3.5-flash:free
@@ -230,13 +246,17 @@ compose_cmd=(docker compose -p "$project_name" --env-file "$env_file")
   /usr/local/bin/openclaw config set browser.noSandbox true
   /usr/local/bin/openclaw config set browser.defaultProfile openclaw
 
-  /usr/local/bin/openclaw config set channels.telegram.enabled true
-  /usr/local/bin/openclaw config set channels.telegram.botToken $TELEGRAM_BOT_TOKEN
-  /usr/local/bin/openclaw config set channels.telegram.dmPolicy allowlist
-  /usr/local/bin/openclaw config set channels.telegram.allowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
-  /usr/local/bin/openclaw config set channels.telegram.groupAllowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
-  /usr/local/bin/openclaw config set channels.telegram.groupPolicy allowlist
-  /usr/local/bin/openclaw config set channels.telegram.streaming partial
+  if [ -n \"${TELEGRAM_BOT_TOKEN:-}\" ] && [ -n \"${TELEGRAM_ALLOW_FROM:-}\" ]; then
+    /usr/local/bin/openclaw config set channels.telegram.enabled true
+    /usr/local/bin/openclaw config set channels.telegram.botToken $TELEGRAM_BOT_TOKEN
+    /usr/local/bin/openclaw config set channels.telegram.dmPolicy allowlist
+    /usr/local/bin/openclaw config set channels.telegram.allowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
+    /usr/local/bin/openclaw config set channels.telegram.groupAllowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
+    /usr/local/bin/openclaw config set channels.telegram.groupPolicy allowlist
+    /usr/local/bin/openclaw config set channels.telegram.streaming partial
+  else
+    /usr/local/bin/openclaw config set channels.telegram.enabled false || true
+  fi
 
   echo 'probably all done'
 "
@@ -253,8 +273,8 @@ python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
   --bridge-port "$bridge_port" \
   --version "$VERSION" \
   --channel-choice "$CHANNEL_CHOICE" \
-  --channel-bot-token "$TELEGRAM_BOT_TOKEN" \
-  --allow-from "$TELEGRAM_ALLOW_FROM" \
+  --channel-bot-token "${TELEGRAM_BOT_TOKEN:-}" \
+  --allow-from "${TELEGRAM_ALLOW_FROM:-}" \
   --token "$OPENCLAW_GATEWAY_TOKEN" \
   --openrouter-token "$OPENROUTER_API_KEY" >/dev/null
 
@@ -269,3 +289,22 @@ echo "  project : $project_name"
 echo "  volume  : $volume_name"
 echo "  ports   : $gateway_port, $bridge_port"
 echo "  Web Dashboard UI : http://127.0.0.1:$gateway_port/#token=$OPENCLAW_GATEWAY_TOKEN"
+
+NGINX_OUT_DIR="${OPENCLAW_NGINX_OUT_DIR:-$ROOT_DIR/generated/nginx}"
+mkdir -p "$NGINX_OUT_DIR"
+cat > "$NGINX_OUT_DIR/${DOMAIN}.conf" <<EOF
+server {
+  listen 80;
+  server_name ${DOMAIN};
+
+  location / {
+    proxy_pass http://127.0.0.1:${gateway_port};
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+  }
+}
+EOF
+echo "  nginx conf: $NGINX_OUT_DIR/${DOMAIN}.conf"

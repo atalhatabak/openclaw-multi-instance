@@ -12,6 +12,7 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS instances (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     domain TEXT NOT NULL UNIQUE,
+    domain_short TEXT,
     project_name TEXT NOT NULL UNIQUE,
     volume_name TEXT NOT NULL UNIQUE,
     gateway_port INTEGER NOT NULL UNIQUE,
@@ -22,12 +23,27 @@ CREATE TABLE IF NOT EXISTS instances (
     allow_from TEXT,
     token TEXT NOT NULL,
     openrouter_token TEXT NOT NULL,
+    image TEXT,
+    current_image_id TEXT,
+    last_update_check_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_instances_domain ON instances(domain);
 CREATE INDEX IF NOT EXISTS idx_instances_gateway_port ON instances(gateway_port);
 CREATE INDEX IF NOT EXISTS idx_instances_bridge_port ON instances(bridge_port);
+
+CREATE TABLE IF NOT EXISTS operation_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id INTEGER,
+    action_type TEXT NOT NULL,
+    log_file_path TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_instance_id ON operation_logs(instance_id);
+CREATE INDEX IF NOT EXISTS idx_logs_created_at ON operation_logs(created_at);
 """
 
 SELECT_FIELDS = """
