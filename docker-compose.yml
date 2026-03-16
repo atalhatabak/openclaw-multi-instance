@@ -35,7 +35,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-
+    networks:
+      - openclaw_net
+      
   openclaw-cli:
     profiles: ["tools"]
     image: ${OPENCLAW_IMAGE:-openclaw:local}
@@ -59,7 +61,16 @@ services:
     entrypoint: ["node", "dist/index.js"]
     depends_on:
       - openclaw-gateway
+
 volumes:
-   openclaw_home:
+  openclaw_home:
     external: true
     name: ${OPENCLAW_HOME_VOLUME:-mebsclaw_test_v1}
+
+networks:
+  openclaw_net:
+    name: ${OPENCLAW_NETWORK_NAME:-openclaw_net}
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

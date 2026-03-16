@@ -129,7 +129,7 @@ def create_app() -> Flask:
     def go_domain(instance_id: int) -> Response:
         instance = get_instance(instance_id)
         domain = (instance["domain"] or "").strip()
-        target = domain if domain.startswith("http://") or domain.startswith("https://") else f"https://{domain}"
+        target = domain if domain.startswith("http://") or domain.startswith("https://") else f"http://{domain}"
         return redirect(target, code=302)
 
     @app.get("/api/instances/<int:instance_id>/devices")
