@@ -29,7 +29,7 @@ DEPLOY_SCRIPT = Path(os.environ.get("OPENCLAW_DEPLOY_SCRIPT", BASE_DIR / "deploy
 UPDATE_SCRIPT = Path(os.environ.get("OPENCLAW_UPDATE_SCRIPT", BASE_DIR / "update_openclaw.sh"))
 SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "change-me-in-production")
 # Default OpenClaw version for new instances (image version).
-DEFAULT_OPENCLAW_VERSION = os.environ.get("OPENCLAW_DEFAULT_VERSION", "2026.3.2")
+DEFAULT_OPENCLAW_VERSION = os.environ.get("OPENCLAW_DEFAULT_VERSION", "2026.3.12")
 
 
 def _bash_script_path(script_path: Path) -> str:
