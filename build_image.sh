@@ -107,10 +107,10 @@ file_path = Path(sys.argv[1])
 text = file_path.read_text(encoding="utf-8")
 
 old1 = '.value=${state.settings.gatewayUrl}'
-new1 = '.value=${e.settings.token.split(":")[0]}'
+new1 = '.value=${e.settings.token.split(";")[0]}'
 
 old2 = '.value=${state.settings.token}'
-new2 = '.value=${e.settings.token.split(":")[1]}'
+new2 = '.value=${e.settings.token.split(";")[1]}'
 
 changed = False
 

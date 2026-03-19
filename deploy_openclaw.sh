@@ -9,6 +9,8 @@ cd "$ROOT_DIR"
 
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
+OPENCLAW_SRC_DIR="$ROOT_DIR/openclaw"
+OPENCLAW_DOCKERFILE="$OPENCLAW_SRC_DIR/Dockerfile"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 LOCK_FILE="${OPENCLAW_LOCK_FILE:-$ROOT_DIR/.openclaw_deploy.lock}"
 BASE_DOMAIN="${OPENCLAW_BASE_DOMAIN:-mebsclaw.com}"
@@ -24,8 +26,6 @@ TELEGRAM_BOT_TOKEN=""
 TELEGRAM_ALLOW_FROM=""
 OPENROUTER_API_KEY=""
 OPENCLAW_GATEWAY_TOKEN=""
-OPENCLAW_BASE_IMAGE=""
-OPENCLAW_IMAGE=""
 OPENCLAW_GATEWAY_BIND="lan"
 CHANNEL_CHOICE="web"
 
@@ -39,7 +39,6 @@ Usage:
     --openrouter-api-key or-v1-xxxxx \
     [--gateway-token my-token] \
     [--version latest] \
-    [--image ghcr.io/openclaw/openclaw:latest] \
     [--gateway-bind lan]
 
 Notes:
@@ -75,10 +74,6 @@ while [[ $# -gt 0 ]]; do
       OPENCLAW_GATEWAY_TOKEN="$2"
       shift 2
       ;;
-    --image)
-      OPENCLAW_BASE_IMAGE="$2"
-      shift 2
-      ;;
     --gateway-bind)
       OPENCLAW_GATEWAY_BIND="$2"
       shift 2
@@ -100,16 +95,16 @@ if [[ "$DOMAIN" != *.* ]]; then
   DOMAIN="${DOMAIN}.${BASE_DOMAIN}"
 fi
 
-if [[ -z "$OPENCLAW_BASE_IMAGE" ]]; then
-  OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:${VERSION}"
-fi
+
 
 have docker || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
 have python3 || fail "python3 is not installed"
-# have flock || fail "flock is not installed"
 [[ -f "$COMPOSE_FILE" ]] || fail "docker-compose.yml not found in $ROOT_DIR"
 [[ -f "$PY_DB_SCRIPT" ]] || fail "instance_db.py not found in $ROOT_DIR"
+[[ -d "$OPENCLAW_SRC_DIR" ]] || fail "openclaw source directory not found in $OPENCLAW_SRC_DIR"
+[[ -f "$OPENCLAW_DOCKERFILE" ]] || fail "Dockerfile not found in $OPENCLAW_DOCKERFILE"
+# have flock || fail "flock is not installed"
 
 python3 "$PY_DB_SCRIPT" --db "$DB_PATH" init >/dev/null
 
@@ -182,9 +177,9 @@ gateway_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.lo
 bridge_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["bridge_port"])')"
 
 domain_slug="$(slugify "$DOMAIN")"
-OPENCLAW_IMAGE="atalhatabak/openclaw-extras:$(image_tagify "$VERSION")"
 project_name="openclaw-${domain_slug}-${gateway_port}"
 volume_name="openclaw-volume-${domain_slug}-${gateway_port}"
+OPENCLAW_IMAGE="mebs-openclaw"
 
 if [[ -z "$OPENCLAW_GATEWAY_TOKEN" ]]; then
 #   OPENCLAW_GATEWAY_TOKEN="$(random_token)"
@@ -223,9 +218,15 @@ set +a
 : "${OPENCLAW_IMAGE:?missing}"
 : "${OPENROUTER_API_KEY:?missing}"
 
-echo "Building custom OpenClaw image..."
+echo "Building OpenClaw image from local source..."
+echo "  source dir : $OPENCLAW_SRC_DIR"
+echo "  dockerfile : $OPENCLAW_DOCKERFILE"
+echo "  image      : $OPENCLAW_IMAGE"
 
-DOCKER_BUILDKIT=1 docker build -f "$ROOT_DIR/dockerfile" --build-arg "OPENCLAW_BASE_IMAGE=$OPENCLAW_BASE_IMAGE" -t "$OPENCLAW_IMAGE" .
+DOCKER_BUILDKIT=1 docker build \
+  -t "$OPENCLAW_IMAGE" \
+  -f "$OPENCLAW_DOCKERFILE" \
+  "$OPENCLAW_SRC_DIR"
 
 docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || {
   docker volume create "$OPENCLAW_HOME_VOLUME" >/dev/null

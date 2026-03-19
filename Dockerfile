@@ -223,14 +223,14 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 RUN npm install -g clawhub && \
     npm cache clean --force
 
-# Install Homebrew 
-RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-    echo >> /home/node/.bashrc \
-    echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"' >> /home/node/.bashrc \
-    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"
+# # Install Homebrew 
+# RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
+#     echo >> /home/node/.bashrc; \
+#     echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"' >> /home/node/.bashrc; \
+#     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)";
 
 
-ENV PATH="/home/node/homebrew/bin:${PATH}"
+# ENV PATH="/home/node/homebrew/bin:${PATH}"
 
 # Expose the CLI binary without requiring npm global writes as non-root.
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \

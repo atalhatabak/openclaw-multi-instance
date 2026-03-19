@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Login | OpenClaw{% endblock %}
+
+{% block body %}
+  <main class="login-shell">
+    <section class="hero-card">
+      <p class="eyebrow">Gateway Login</p>
+      <h1>Kullanici bazli OpenClaw erisimi</h1>
+      <p class="muted">
+        Password sadece bu panelde dogrulama icindir. Gateway token ise login sifresinden ayridir ve
+        backend tarafinda yonlendirme icin kullanilir.
+      </p>
+      <div class="hero-note">
+        Volume kalici, container dinamik. Login sonrasi uygun container secilir ve seni gateway'e yonlendirir.
+      </div>
+    </section>
+
+    <section class="panel auth-panel">
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Login</p>
+          <h2>Username ve password ile giris yap</h2>
+        </div>
+        <a class="text-link" href="{{ url_for('web.admin_dashboard') }}">Admin panel</a>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-wrap">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" action="{{ url_for('web.login') }}" class="form-grid">
+        <label class="field">
+          <span>Username</span>
+          <input type="text" name="username" placeholder="ornek kullanici" required>
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" placeholder="Sadece login icin kullanilir" required>
+        </label>
+        <button class="btn primary" type="submit">Login ve yonlendir</button>
+      </form>
+    </section>
+  </main>
+{% endblock %}
