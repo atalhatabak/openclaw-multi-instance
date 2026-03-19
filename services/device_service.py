@@ -4,13 +4,14 @@ import json
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from services.docker_service import exec_openclaw_cli
+from services.command_service import AppError, run_cmd_logged
+from services.docker_service import gateway_container_name
 
 
 @dataclass
 class Device:
-    device_id: str  # requestId for pending, deviceId for paired
-    status: str  # "pending" | "paired"
+    device_id: str
+    status: str
     raw: str
 
 
@@ -20,30 +21,40 @@ def _safe_str(value: Any) -> str:
     return str(value)
 
 
+def _run_openclaw_cli(project_name: str, candidates: list[list[str]], *, instance_id: Optional[int] = None) -> str:
+    container = gateway_container_name(project_name)
+    last_output = ""
+    for args in candidates:
+        result = run_cmd_logged(
+            ["docker", "exec", "-i", container] + args,
+            check=False,
+            instance_id=instance_id,
+            action_type="devices",
+        )
+        output = (result.stdout or result.stderr or "").strip()
+        if result.ok:
+            return output
+        last_output = output
+    raise AppError(last_output or "OpenClaw device command failed.")
+
+
 def list_devices(project_name: str, *, instance_id: Optional[int] = None) -> tuple[list[Device], str]:
-    """
-    Use OpenClaw's JSON output for stable parsing.
-    """
     candidates: list[list[str]] = [
         ["openclaw", "devices", "list", "--json"],
         ["/usr/local/bin/openclaw", "devices", "list", "--json"],
     ]
-    last = ""
-    payload: dict[str, Any] = {}
-    for args in candidates:
-        last = exec_openclaw_cli(project_name, args, instance_id=instance_id)
-        if not last:
-            continue
-        try:
-            payload = json.loads(last)
-            break
-        except json.JSONDecodeError:
-            continue
+    raw_output = _run_openclaw_cli(project_name, candidates, instance_id=instance_id)
+    if not raw_output:
+        return [], ""
+
+    try:
+        payload = json.loads(raw_output)
+    except json.JSONDecodeError as exc:
+        raise AppError("Cihaz listesi JSON olarak parse edilemedi.") from exc
 
     devices: list[Device] = []
 
-    pending_list = payload.get("pending") or []
-    for entry in pending_list:
+    for entry in payload.get("pending") or []:
         req_id = _safe_str(entry.get("requestId"))
         if not req_id:
             continue
@@ -55,8 +66,7 @@ def list_devices(project_name: str, *, instance_id: Optional[int] = None) -> tup
             )
         )
 
-    paired_list = payload.get("paired") or []
-    for entry in paired_list:
+    for entry in payload.get("paired") or []:
         dev_id = _safe_str(entry.get("deviceId"))
         if not dev_id:
             continue
@@ -68,7 +78,7 @@ def list_devices(project_name: str, *, instance_id: Optional[int] = None) -> tup
             )
         )
 
-    return devices, last or json.dumps(payload, ensure_ascii=False)
+    return devices, raw_output
 
 
 def approve_device(project_name: str, device_id: str, *, instance_id: Optional[int] = None) -> str:
@@ -76,10 +86,5 @@ def approve_device(project_name: str, device_id: str, *, instance_id: Optional[i
         ["openclaw", "devices", "approve", device_id],
         ["/usr/local/bin/openclaw", "devices", "approve", device_id],
     ]
-    out = ""
-    for args in candidates:
-        out = exec_openclaw_cli(project_name, args, instance_id=instance_id)
-        if out:
-            break
+    out = _run_openclaw_cli(project_name, candidates, instance_id=instance_id)
     return out or "Approve command executed."
-

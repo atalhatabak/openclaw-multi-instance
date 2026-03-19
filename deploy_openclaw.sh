@@ -24,10 +24,8 @@ TELEGRAM_BOT_TOKEN=""
 TELEGRAM_ALLOW_FROM=""
 OPENROUTER_API_KEY=""
 OPENCLAW_GATEWAY_TOKEN=""
-# Runtime image used by docker-compose services.
-# We always build/refresh atalhatabak/openclaw-extras:latest from the
-# upstream ghcr.io/openclaw/openclaw:latest before starting containers.
-OPENCLAW_IMAGE="atalhatabak/openclaw-extras:latest"
+OPENCLAW_BASE_IMAGE=""
+OPENCLAW_IMAGE=""
 OPENCLAW_GATEWAY_BIND="lan"
 CHANNEL_CHOICE="web"
 
@@ -78,7 +76,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --image)
-      OPENCLAW_IMAGE="$2"
+      OPENCLAW_BASE_IMAGE="$2"
       shift 2
       ;;
     --gateway-bind)
@@ -102,6 +100,10 @@ if [[ "$DOMAIN" != *.* ]]; then
   DOMAIN="${DOMAIN}.${BASE_DOMAIN}"
 fi
 
+if [[ -z "$OPENCLAW_BASE_IMAGE" ]]; then
+  OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:${VERSION}"
+fi
+
 have docker || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
 have python3 || fail "python3 is not installed"
@@ -115,6 +117,15 @@ slugify() {
   echo "$1" \
     | tr '[:upper:]' '[:lower:]' \
     | sed 's/[^a-z0-9]/-/g' \
+    | sed 's/-\+/-/g' \
+    | sed 's/^-//' \
+    | sed 's/-$//'
+}
+
+image_tagify() {
+  echo "${1:-latest}" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9_.-]/-/g' \
     | sed 's/-\+/-/g' \
     | sed 's/^-//' \
     | sed 's/-$//'
@@ -171,6 +182,7 @@ gateway_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.lo
 bridge_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["bridge_port"])')"
 
 domain_slug="$(slugify "$DOMAIN")"
+OPENCLAW_IMAGE="atalhatabak/openclaw-extras:$(image_tagify "$VERSION")"
 project_name="openclaw-${domain_slug}-${gateway_port}"
 volume_name="openclaw-volume-${domain_slug}-${gateway_port}"
 
@@ -213,7 +225,7 @@ set +a
 
 echo "Building custom OpenClaw image..."
 
-DOCKER_BUILDKIT=1 docker build -t atalhatabak/openclaw-extras:latest .
+DOCKER_BUILDKIT=1 docker build -f "$ROOT_DIR/dockerfile" --build-arg "OPENCLAW_BASE_IMAGE=$OPENCLAW_BASE_IMAGE" -t "$OPENCLAW_IMAGE" .
 
 docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || {
   docker volume create "$OPENCLAW_HOME_VOLUME" >/dev/null
@@ -267,16 +279,19 @@ compose_started=1
 
 python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
   --domain "$DOMAIN" \
+  --domain-short "$domain_slug" \
   --project-name "$project_name" \
   --volume-name "$volume_name" \
   --gateway-port "$gateway_port" \
   --bridge-port "$bridge_port" \
   --version "$VERSION" \
+  --gateway-bind "$OPENCLAW_GATEWAY_BIND" \
   --channel-choice "$CHANNEL_CHOICE" \
   --channel-bot-token "${TELEGRAM_BOT_TOKEN:-}" \
   --allow-from "${TELEGRAM_ALLOW_FROM:-}" \
   --token "$OPENCLAW_GATEWAY_TOKEN" \
-  --openrouter-token "$OPENROUTER_API_KEY" >/dev/null
+  --openrouter-token "$OPENROUTER_API_KEY" \
+  --image "$OPENCLAW_IMAGE" >/dev/null
 
 rm -f "$env_file"
 env_file=""

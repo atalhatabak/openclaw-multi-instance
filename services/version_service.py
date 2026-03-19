@@ -6,6 +6,8 @@ from typing import Optional
 from services.command_service import run_cmd_logged
 from services.docker_service import gateway_container_name
 
+UPSTREAM_IMAGE = "ghcr.io/openclaw/openclaw"
+
 
 @dataclass
 class VersionInfo:
@@ -13,13 +15,23 @@ class VersionInfo:
     image_version: Optional[str]
 
 
-def get_openclaw_version(default_version: str) -> VersionInfo:
+def resolve_openclaw_image(version_or_image: Optional[str]) -> str:
+    value = (version_or_image or "").strip()
+    if not value:
+        return f"{UPSTREAM_IMAGE}:latest"
+    if "/" in value:
+        return value
+    return f"{UPSTREAM_IMAGE}:{value}"
+
+
+def get_openclaw_version(default_version: str, *, image_ref: Optional[str] = None) -> VersionInfo:
     """
-    Detect the latest OpenClaw image version from the upstream image.
+    Detect the OpenClaw version from the provided image, or fall back to upstream latest.
     """
+    target_image = resolve_openclaw_image(image_ref)
     try:
         result = run_cmd_logged(
-            ["docker", "run", "--rm", "ghcr.io/openclaw/openclaw", "openclaw", "--version"],
+            ["docker", "run", "--rm", target_image, "openclaw", "--version"],
             check=False,
             action_type="version",
         )
@@ -48,4 +60,3 @@ def get_instance_version(project_name: str, default_version: str) -> str:
     except Exception:
         pass
     return default_version
-

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS instances (
     gateway_port INTEGER NOT NULL UNIQUE,
     bridge_port INTEGER NOT NULL UNIQUE,
     version TEXT NOT NULL,
+    gateway_bind TEXT NOT NULL DEFAULT 'lan',
     channel_choice TEXT NOT NULL DEFAULT 'telegram',
     channel_bot_token TEXT,
     allow_from TEXT,
@@ -60,6 +61,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE instances ADD COLUMN current_image_id TEXT")
     if not _column_exists(conn, "instances", "last_update_check_at"):
         conn.execute("ALTER TABLE instances ADD COLUMN last_update_check_at DATETIME")
+    if not _column_exists(conn, "instances", "gateway_bind"):
+        conn.execute("ALTER TABLE instances ADD COLUMN gateway_bind TEXT NOT NULL DEFAULT 'lan'")
 
     conn.executescript(
         """
@@ -85,4 +88,3 @@ def rows_to_dicts(rows: Iterable[sqlite3.Row]) -> list[dict[str, Any]]:
 
 def row_to_dict(row: Optional[sqlite3.Row]) -> Optional[dict[str, Any]]:
     return dict(row) if row is not None else None
-

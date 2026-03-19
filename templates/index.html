@@ -4,174 +4,238 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenClaw Admin</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <link rel="stylesheet" href="static/style.css">
+  <script defer src="static/app.js"></script>
 </head>
 <body>
-  <div class="wrap">
-    <div class="topbar">
-      <div class="brand">
-        <h1>OpenClaw Admin</h1>
-        <p class="muted">Instance oluştur, yönet, cihazları onayla, logları görüntüle.</p>
-      </div>
-      <div class="topbar-right">
-        <button id="themeToggle" class="btn ghost smallbtn" type="button">
-          Tema: <span id="themeLabel">Dark</span>
-        </button>
-        <div class="badge">{{ instances|length }} instance</div>
-      </div>
-    </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-wrap">
-          {% for category, message in messages %}
-            <div class="flash {{ category }}">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
-
-    <div class="card">
-      <div class="head">
-        <div class="head-row">
-          <h2>Create New Instance</h2>
-          <div class="muted small">
-            Telegram opsiyonel, primary flow Web Dashboard.
-            <span id="versionInline" class="muted small"></span>
+  <div class="page-shell">
+    <aside class="sidebar">
+      <div class="sidebar-panel">
+        <div class="brand-lockup">
+          <div class="brand-mark">OC</div>
+          <div class="brand-copy">
+            <p class="eyebrow">Operations Console</p>
+            <h1>OpenClaw Admin</h1>
+            <p class="muted">Multi-instance kurulum, lifecycle yönetimi ve operasyon görünürlüğü.</p>
           </div>
         </div>
-      </div>
-      <div class="body">
-        <form class="create-grid" method="post" action="{{ url_for('create_instance') }}">
-          <div class="field">
-            <label>Subdomain / Domain</label>
-            <input type="text" name="domain" placeholder="ali (=> ali.mebsclaw.com) veya ali.mebsclaw.com" required>
-            <div class="hint muted">Sadece “ali” girersen otomatik olarak “ali.mebsclaw.com” yapılır.</div>
-          </div>
-          <div class="field">
-            <label>OpenRouter API Key</label>
-            <input type="password" name="openrouter_api_key" placeholder="or-v1-..." required>
-          </div>
-          <div class="field">
-            <label>Gateway Token (optional)</label>
-            <input type="text" name="gateway_token" placeholder="Boş bırakılırsa otomatik/varsayılan">
-          </div>
-          <div class="field">
-            <label>Gateway Bind</label>
-            <select name="gateway_bind">
-              <option value="lan" selected>lan</option>
-              <option value="local">local</option>
-            </select>
-          </div>
 
-          <details class="optional">
-            <summary>Optional Telegram Settings</summary>
-            <div class="optional-grid">
-              <div class="field">
-                <label>Telegram Bot Token</label>
-                <input type="text" name="telegram_bot_token" placeholder="123456:ABCDEF">
-              </div>
-              <div class="field">
-                <label>Telegram Allow From</label>
-                <input type="text" name="telegram_allow_from" placeholder="905551112233 veya 455921257">
-              </div>
-              <div class="hint muted">
-                Telegram sadece <strong>iki alan da doluysa</strong> configure edilir.
-              </div>
-            </div>
-          </details>
-
-          <details class="optional">
-            <summary>Advanced (optional)</summary>
-            <div class="optional-grid">
-              <div class="field">
-                <label>OpenClaw Version (image)</label>
-                <input type="text" name="version" value="{{ default_version }}" placeholder="{{ default_version }}">
-              </div>
-            </div>
-          </details>
-
-          <div class="actions">
-            <button class="btn success" type="submit">Create</button>
+        <div class="sidebar-stats">
+          <div class="stat-card stat-card-primary">
+            <span class="stat-label">Toplam Instance</span>
+            <strong class="stat-value">{{ instances|length }}</strong>
+            <span class="stat-note muted">Tek panelden yönetiliyor</span>
           </div>
-        </form>
-      </div>
-    </div>
+          <div class="stat-card">
+            <span class="stat-label">Ana Akış</span>
+            <strong class="stat-value">Web Dashboard</strong>
+            <span class="stat-note muted">Telegram ayarları opsiyonel</span>
+          </div>
+        </div>
 
-    <div class="card">
-      <div class="head">
-        <div class="head-row">
-          <h2>Instances</h2>
-          <div class="search">
-            <input id="searchInput" type="search" placeholder="Search: domain / project / port / status">
+        <div class="sidebar-section">
+          <p class="section-title">Kısa Notlar</p>
+          <div class="note-list">
+            <div class="note-item">Yeni instance formu sade tutuldu, gelişmiş ayarlar katlanabilir yapıda.</div>
+            <div class="note-item">Loglar ve cihaz işlemleri modal üzerinden hızlı incelenir.</div>
+            <div class="note-item">Theme switcher ve responsive düzen mevcut akışla uyumlu çalışır.</div>
           </div>
         </div>
       </div>
-      <div class="body">
-        {% if not instances %}
-          <div class="empty muted">Henüz kayıt yok.</div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="topbar-copy">
+          <p class="eyebrow">Admin Panel</p>
+          <h2>Instance yönetimini daha hızlı ve okunabilir hale getiren tek bakış dashboard</h2>
+        </div>
+        <div class="topbar-right">
+          <div class="badge badge-soft">Canlı görünüm</div>
+          <button id="themeToggle" class="btn ghost smallbtn" type="button" aria-label="Tema değiştir">
+            Tema: <span id="themeLabel">Dark</span>
+          </button>
+        </div>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-wrap">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
         {% endif %}
+      {% endwith %}
 
-        <div id="instanceList" class="instances">
-          {% for item in instances %}
-            <div
-              class="instance"
-              data-domain="{{ item['domain'] }}"
-              data-project="{{ item['project_name'] }}"
-              data-ports="{{ item['gateway_port'] }} {{ item['bridge_port'] }}"
-              data-status="{{ item.get('container_state','unknown') }}"
-            >
-              <div class="row">
-                <div class="title">
-                  <div class="domain">{{ item['domain'] }}</div>
-                  <div class="muted small">{{ item['project_name'] }}</div>
-                </div>
-                <div class="right">
-                  <span class="badge">{{ item.get('container_state', 'unknown') }}</span>
-                  <button class="btn ghost smallbtn" type="button" data-toggle-details>Details</button>
-                </div>
-              </div>
-
-              <div class="meta">
-                <div class="kv"><span class="k">Ports</span>{{ item['gateway_port'] }} / {{ item['bridge_port'] }}</div>
-                <div class="kv"><span class="k">Volume</span>{{ item['volume_name'] }}</div>
-                <div class="kv"><span class="k">Version</span>{{ item['version'] }}</div>
-              </div>
-
-              <div class="toolbar">
-                <a class="btn ghost" href="{{ url_for('go_domain', instance_id=item['id']) }}" target="_blank">Open Domain</a>
-                <a class="btn ghost" href="http://127.0.0.1:{{ item['gateway_port'] }}/#token={{ item['token'] }}" target="_blank">Open Gateway</a>
-
-                <form method="post" action="{{ url_for('start_instance', instance_id=item['id']) }}">
-                  <button class="btn secondary" type="submit">Start</button>
-                </form>
-                <form method="post" action="{{ url_for('stop_instance', instance_id=item['id']) }}">
-                  <button class="btn warn" type="submit">Stop</button>
-                </form>
-                <form method="post" action="{{ url_for('update_instance', instance_id=item['id']) }}">
-                  <button class="btn ghost" type="submit">Update</button>
-                </form>
-
-                <button class="btn ghost" type="button" data-devices="{{ item['id'] }}">Cihazlar</button>
-                <button class="btn ghost" type="button" data-logs="{{ item['id'] }}">Logs</button>
-
-                <form method="post" action="{{ url_for('delete_instance', instance_id=item['id']) }}" onsubmit="return confirm('Bu instance silinsin mi? Container, network, volume ve DB kaydı kaldırılacak.');">
-                  <button class="btn danger" type="submit">Delete</button>
-                </form>
-              </div>
-
-              <div class="details hidden" data-details>
-                <div class="grid2">
-                  <pre>{{ item['details_json'] }}</pre>
-                  <pre>{{ item['docker_info'] }}</pre>
-                </div>
-              </div>
-            </div>
-          {% endfor %}
+      <section class="panel panel-hero">
+        <div class="panel-header">
+          <div>
+            <p class="section-title">Create Instance</p>
+            <h3>Yeni OpenClaw instance oluştur</h3>
+          </div>
+          <div class="panel-header-note">
+            Telegram opsiyonel, primary flow Web Dashboard.
+            <span id="versionInline" class="version-chip"></span>
+          </div>
         </div>
-      </div>
-    </div>
+
+        <div class="panel-body">
+          <form class="create-grid" method="post" action="{{ url_for('create_instance') }}">
+            <div class="field field-wide">
+              <label>Username</label>
+              <input type="text" name="domain" placeholder="Username" required>
+              <div class="hint muted"></div>
+            </div>
+            <div class="field">
+              <label>Gateway Token | PASSWORD</label>
+              <input type="text" name="gateway_token" placeholder="Boş bırakılırsa varsayılan/otomatik">
+            </div>
+            <div class="field">
+              <label>OpenRouter API Key</label>
+              <input type="password" name="openrouter_api_key" placeholder="or-v1-..." required>
+            </div>
+
+
+
+            <div class="field" style="display:none;">
+              <label>Gateway Bind</label>
+              <select name="gateway_bind">
+                <option value="lan" selected>lan</option>
+                <option value="local">local</option>
+              </select>
+            </div>
+
+            <details class="optional">
+              <summary>Optional Telegram Settings</summary>
+              <div class="optional-grid">
+                <div class="field">
+                  <label>Telegram Bot Token</label>
+                  <input type="text" name="telegram_bot_token" placeholder="123456:ABCDEF">
+                </div>
+                <div class="field">
+                  <label>Telegram Allow From</label>
+                  <input type="text" name="telegram_allow_from" placeholder="905551112233 veya 455921257">
+                </div>
+                <div class="hint muted field-wide">
+                  Telegram sadece <strong>iki alan da doluysa</strong> configure edilir.
+                </div>
+              </div>
+            </details>
+
+            <details class="optional">
+              <summary>Advanced</summary>
+              <div class="optional-grid">
+                <div class="field">
+                  <label>OpenClaw Version (image)</label>
+                  <input type="text" name="version" value="{{ default_version }}" placeholder="{{ default_version }}">
+                </div>
+              </div>
+            </details>
+
+            <div class="actions">
+              <button class="btn primary" type="submit">Create Instance</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-title">Instances</p>
+            <h3>Kurulu instance listesi</h3>
+          </div>
+          <div class="search-wrap">
+            <label class="search-label" for="searchInput">Filtrele</label>
+            <div class="search">
+              <input id="searchInput" type="search" placeholder="Domain / project / port / status ara">
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          {% if not instances %}
+            <div class="empty-state">
+              <div class="empty-state-title">Henüz kayıt yok</div>
+              <div class="muted">İlk instance’ı oluşturduğunda burada yönetim kartları görünecek.</div>
+            </div>
+          {% endif %}
+
+          <div id="instanceList" class="instances">
+            {% for item in instances %}
+              <article
+                class="instance"
+                data-domain="{{ item['domain'] }}"
+                data-project="{{ item['project_name'] }}"
+                data-ports="{{ item['gateway_port'] }} {{ item['bridge_port'] }}"
+                data-status="{{ item.get('container_state','unknown') }}"
+              >
+                <div class="instance-top">
+                  <div class="title">
+                    <div class="domain">{{ item['domain'] }}</div>
+                    <div class="muted small">{{ item['project_name'] }}</div>
+                  </div>
+                  <div class="right">
+                    <span class="badge">{{ item.get('container_state', 'unknown') }}</span>
+                    <button class="btn ghost smallbtn" type="button" data-toggle-details aria-expanded="false">Details</button>
+                  </div>
+                </div>
+
+                <div class="meta">
+                  <div class="kv">
+                    <span class="k">Gateway / Bridge</span>
+                    <strong>{{ item['gateway_port'] }} / {{ item['bridge_port'] }}</strong>
+                  </div>
+                  <div class="kv">
+                    <span class="k">Volume</span>
+                    <strong>{{ item['volume_name'] }}</strong>
+                  </div>
+                  <div class="kv">
+                    <span class="k">Version</span>
+                    <strong>{{ item['version'] }}</strong>
+                  </div>
+                  <div class="kv">
+                    <span class="k">Bind</span>
+                    <strong>{{ item.get('gateway_bind', 'lan') }}</strong>
+                  </div>
+                </div>
+
+                <div class="toolbar">
+                  <!-- <a class="btn ghost" href="{{ url_for('go_domain', instance_id=item['id']) }}" target="_blank">Open Domain</a> -->
+                  <a class="btn ghost" href="http://127.0.0.1:{{ item['gateway_port'] }}/#token={{ item['token'] }}" target="_blank">Open Gateway</a>
+
+                  <form method="post" action="{{ url_for('start_instance', instance_id=item['id']) }}">
+                    <button class="btn secondary" type="submit">Start</button>
+                  </form>
+                  <form method="post" action="{{ url_for('stop_instance', instance_id=item['id']) }}">
+                    <button class="btn warn" type="submit">Stop</button>
+                  </form>
+                  <form method="post" action="{{ url_for('update_instance', instance_id=item['id']) }}">
+                    <button class="btn primary-subtle" type="submit">Update</button>
+                  </form>
+
+                  <button class="btn ghost" type="button" data-devices="{{ item['id'] }}">Cihazlar</button>
+                  <button class="btn ghost" type="button" data-logs="{{ item['id'] }}">Logs</button>
+
+                  <form method="post" action="{{ url_for('delete_instance', instance_id=item['id']) }}" onsubmit="return confirm('Bu instance silinsin mi? Container, network, volume ve DB kaydı kaldırılacak.');">
+                    <button class="btn danger" type="submit">Delete</button>
+                  </form>
+                </div>
+
+                <div class="details hidden" data-details>
+                  <div class="details-header">Runtime ve Docker detayları</div>
+                  <div class="grid2">
+                    <pre>{{ item['details_json'] }}</pre>
+                    <pre>{{ item['docker_info'] }}</pre>
+                  </div>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
   <dialog id="modal" class="modal">
@@ -183,4 +247,3 @@
   </dialog>
 </body>
 </html>
-

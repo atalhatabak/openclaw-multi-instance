@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from services.command_service import run_cmd_logged
 
@@ -13,13 +15,53 @@ DOCKER_COMPOSE_FILE = Path(
 )
 
 
-def compose_base_cmd(project_name: str) -> list[str]:
-    return ["docker", "compose", "-p", project_name, "-f", str(DOCKER_COMPOSE_FILE)]
+def compose_base_cmd(project_name: str, *, env_file: Optional[str] = None) -> list[str]:
+    cmd = ["docker", "compose", "-p", project_name, "-f", str(DOCKER_COMPOSE_FILE)]
+    if env_file:
+        cmd.extend(["--env-file", env_file])
+    return cmd
+
+
+@contextmanager
+def instance_env_file(instance: dict[str, Any]) -> Iterator[str]:
+    lines = [
+        f"OPENCLAW_HOME_VOLUME={instance['volume_name']}",
+        f"OPENCLAW_GATEWAY_TOKEN={instance['token']}",
+        f"OPENCLAW_GATEWAY_PORT={instance['gateway_port']}",
+        f"OPENCLAW_BRIDGE_PORT={instance['bridge_port']}",
+        f"OPENCLAW_GATEWAY_BIND={instance.get('gateway_bind') or 'lan'}",
+        f"OPENCLAW_IMAGE={instance.get('image') or 'ghcr.io/openclaw/openclaw:latest'}",
+        f"OPENROUTER_API_KEY={instance['openrouter_token']}",
+    ]
+    if instance.get("channel_bot_token") and instance.get("allow_from"):
+        lines.extend(
+            [
+                f"TELEGRAM_BOT_TOKEN={instance['channel_bot_token']}",
+                f"TELEGRAM_ALLOW_FROM={instance['allow_from']}",
+            ]
+        )
+
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        prefix=f"openclaw_{instance['id']}_",
+        suffix=".env",
+        dir=BASE_DIR,
+        delete=False,
+    )
+    try:
+        handle.write("\n".join(lines) + "\n")
+        handle.flush()
+        handle.close()
+        yield handle.name
+    finally:
+        try:
+            Path(handle.name).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def gateway_container_name(project_name: str) -> str:
-    # Default docker compose container naming scheme:
-    # {project_name}-{service_name}-1
     return f"{project_name}-openclaw-gateway-1"
 
 
@@ -64,31 +106,34 @@ def inspect_project_text(project_name: str, *, limit: int = 4000) -> str:
         return f"Docker info alınamadı: {exc}"
 
 
-def compose_up(project_name: str, *, instance_id: Optional[int] = None) -> str:
-    result = run_cmd_logged(
-        compose_base_cmd(project_name) + ["up", "-d"],
-        instance_id=instance_id,
-        action_type="start",
-    )
+def compose_up(instance: dict[str, Any], *, instance_id: Optional[int] = None) -> str:
+    with instance_env_file(instance) as env_file:
+        result = run_cmd_logged(
+            compose_base_cmd(str(instance["project_name"]), env_file=env_file) + ["up", "-d", "--remove-orphans"],
+            instance_id=instance_id,
+            action_type="start",
+        )
     return result.stdout or "Instance başlatıldı."
 
 
-def compose_stop(project_name: str, *, instance_id: Optional[int] = None) -> str:
-    result = run_cmd_logged(
-        compose_base_cmd(project_name) + ["stop"],
-        instance_id=instance_id,
-        action_type="stop",
-    )
+def compose_stop(instance: dict[str, Any], *, instance_id: Optional[int] = None) -> str:
+    with instance_env_file(instance) as env_file:
+        result = run_cmd_logged(
+            compose_base_cmd(str(instance["project_name"]), env_file=env_file) + ["stop"],
+            instance_id=instance_id,
+            action_type="stop",
+        )
     return result.stdout or "Instance durduruldu."
 
 
-def compose_down_and_remove_volume(project_name: str, *, instance_id: Optional[int] = None) -> str:
-    result = run_cmd_logged(
-        compose_base_cmd(project_name) + ["down", "-v", "--remove-orphans"],
-        check=False,
-        instance_id=instance_id,
-        action_type="delete",
-    )
+def compose_down_and_remove_volume(instance: dict[str, Any], *, instance_id: Optional[int] = None) -> str:
+    with instance_env_file(instance) as env_file:
+        result = run_cmd_logged(
+            compose_base_cmd(str(instance["project_name"]), env_file=env_file) + ["down", "-v", "--remove-orphans"],
+            check=False,
+            instance_id=instance_id,
+            action_type="delete",
+        )
     return result.stdout or result.stderr or ""
 
 
@@ -110,15 +155,3 @@ def docker_network_prune(*, instance_id: Optional[int] = None) -> str:
         action_type="delete",
     )
     return result.stdout or result.stderr or ""
-
-
-def exec_openclaw_cli(project_name: str, args: list[str], *, instance_id: Optional[int] = None) -> str:
-    # On Windows Docker Desktop, using `docker exec` with the concrete container
-    # name matches the manual flow more reliably than `docker compose exec`.
-    container = gateway_container_name(project_name)
-    cmd = ["docker", "exec", "-i", container] + args
-    result = run_cmd_logged(cmd, check=False, instance_id=instance_id, action_type="devices")
-    if result.ok:
-        return result.stdout.strip()
-    return (result.stdout or result.stderr or "").strip()
-

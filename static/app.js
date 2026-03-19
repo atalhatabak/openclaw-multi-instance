@@ -32,7 +32,10 @@ function setupDetailsToggle() {
       const card = btn.closest(".instance");
       const details = card && qs("[data-details]", card);
       if (!details) return;
+      const expanded = btn.getAttribute("aria-expanded") === "true";
       details.classList.toggle("hidden");
+      btn.setAttribute("aria-expanded", expanded ? "false" : "true");
+      btn.textContent = expanded ? "Details" : "Hide Details";
     });
   });
 }
@@ -85,11 +88,25 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function buildTable(headers, rows) {
+  const head = headers.map(h => `<th>${escapeHtml(h)}</th>`).join("");
+  const body = rows.join("");
+  return [
+    `<div class="table-wrap">`,
+    `<table class="table">`,
+    `<thead><tr>${head}</tr></thead>`,
+    `<tbody>${body}</tbody>`,
+    `</table>`,
+    `</div>`,
+  ].join("");
+}
+
 async function showDevices(instanceId) {
   const data = await apiGet(`/api/instances/${instanceId}/devices`);
   const devices = data.devices || [];
 
   let html = "";
+  html += `<div class="modal-stack">`;
   html += `<div id="devicesMessage" class="muted small"></div>`;
   const pending = devices.filter(d => (d.status || "").toLowerCase() === "pending");
   const paired = devices.filter(d => (d.status || "").toLowerCase() === "paired");
@@ -97,47 +114,38 @@ async function showDevices(instanceId) {
   if (!devices.length) {
     html += `<div class="muted">Henüz cihaz bulunamadı.</div>`;
   } else {
-    // Pending
     html += `<div class="muted small">Bekleyen cihazları buradan onaylayabilirsin.</div>`;
-    html += `<div class="card" style="box-shadow:none; margin-top:10px;"><div class="body">`;
-    html += `<h3 class="small" style="margin:0 0 6px;">Bekleyen cihazlar</h3>`;
+    html += `<section class="surface-card"><div class="surface-card-body">`;
+    html += `<h3 class="surface-title">Bekleyen cihazlar</h3>`;
     if (!pending.length) {
       html += `<div class="muted small">Bekleyen cihaz yok.</div>`;
     } else {
-      html += `<table style="width:100%; border-collapse:collapse; margin-top:4px;">`;
-      html += `<thead><tr><th style="text-align:left; padding:8px; border-bottom:1px solid var(--line);">Request ID</th><th style="padding:8px; border-bottom:1px solid var(--line); text-align:right;"></th></tr></thead>`;
-      html += `<tbody>`;
-      pending.forEach(d => {
-        html += `<tr>`;
-        html += `<td style="padding:8px; border-bottom:1px solid var(--line); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">${escapeHtml(d.device_id)}</td>`;
-        html += `<td style="padding:8px; border-bottom:1px solid var(--line); text-align:right;">`;
-        html += `<button class="btn success smallbtn" data-approve="${escapeHtml(d.device_id)}">Onayla</button>`;
-        html += `</td>`;
-        html += `</tr>`;
-      });
-      html += `</tbody></table>`;
+      const pendingRows = pending.map(d => [
+        `<tr>`,
+        `<td class="mono">${escapeHtml(d.device_id)}</td>`,
+        `<td><button class="btn success smallbtn" data-approve="${escapeHtml(d.device_id)}">Onayla</button></td>`,
+        `</tr>`,
+      ].join(""));
+      html += buildTable(["Request ID", "Action"], pendingRows);
     }
-    html += `</div></div>`;
+    html += `</div></section>`;
 
-    // Paired
-    html += `<div class="card" style="box-shadow:none; margin-top:12px;"><div class="body">`;
-    html += `<h3 class="small" style="margin:0 0 6px;">Eşleşmiş cihazlar</h3>`;
+    html += `<section class="surface-card"><div class="surface-card-body">`;
+    html += `<h3 class="surface-title">Eşleşmiş cihazlar</h3>`;
     if (!paired.length) {
       html += `<div class="muted small">Eşleşmiş cihaz bulunmuyor.</div>`;
     } else {
-      html += `<table style="width:100%; border-collapse:collapse; margin-top:4px;">`;
-      html += `<thead><tr><th style="text-align:left; padding:8px; border-bottom:1px solid var(--line);">Request/Device</th><th style="padding:8px; border-bottom:1px solid var(--line);"></th></tr></thead>`;
-      html += `<tbody>`;
-      paired.forEach(d => {
-        html += `<tr>`;
-        html += `<td style="padding:8px; border-bottom:1px solid var(--line); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">${escapeHtml(d.device_id)}</td>`;
-        html += `<td style="padding:8px; border-bottom:1px solid var(--line); text-align:right;"><span class="muted small">Paired</span></td>`;
-        html += `</tr>`;
-      });
-      html += `</tbody></table>`;
+      const pairedRows = paired.map(d => [
+        `<tr>`,
+        `<td class="mono">${escapeHtml(d.device_id)}</td>`,
+        `<td><span class="badge">Paired</span></td>`,
+        `</tr>`,
+      ].join(""));
+      html += buildTable(["Device", "Status"], pairedRows);
     }
-    html += `</div></div>`;
+    html += `</div></section>`;
   }
+  html += `</div>`;
 
   openModal(`Cihazlar (instance ${instanceId})`, html);
 
@@ -171,22 +179,19 @@ async function showLogs(instanceId) {
   if (!logs.length) {
     html = `<div class="muted">No logs yet for this instance.</div>`;
   } else {
+    html += `<div class="modal-stack">`;
     html += `<div class="muted small">Latest 30 logs.</div>`;
-    html += `<div class="card" style="box-shadow:none; margin-top:10px;"><div class="body">`;
-    html += `<table style="width:100%; border-collapse:collapse;">`;
-    html += `<thead><tr><th style="text-align:left; padding:8px; border-bottom:1px solid var(--line);">When</th><th style="text-align:left; padding:8px; border-bottom:1px solid var(--line);">Action</th><th style="text-align:left; padding:8px; border-bottom:1px solid var(--line);">Status</th><th style="padding:8px; border-bottom:1px solid var(--line);"></th></tr></thead>`;
-    html += `<tbody>`;
-    logs.forEach(l => {
-      html += `<tr>`;
-      html += `<td style="padding:8px; border-bottom:1px solid var(--line);">${escapeHtml(l.created_at || "")}</td>`;
-      html += `<td style="padding:8px; border-bottom:1px solid var(--line);">${escapeHtml(l.action_type || "")}</td>`;
-      html += `<td style="padding:8px; border-bottom:1px solid var(--line);">${escapeHtml(l.status || "")}</td>`;
-      html += `<td style="padding:8px; border-bottom:1px solid var(--line); text-align:right;">`;
-      html += `<button class="btn ghost smallbtn" data-log-open="${l.id}">Open</button>`;
-      html += `</td>`;
-      html += `</tr>`;
-    });
-    html += `</tbody></table></div></div>`;
+    html += `<section class="surface-card"><div class="surface-card-body">`;
+    const rows = logs.map(l => [
+      `<tr>`,
+      `<td>${escapeHtml(l.created_at || "")}</td>`,
+      `<td>${escapeHtml(l.action_type || "")}</td>`,
+      `<td><span class="badge">${escapeHtml(l.status || "")}</span></td>`,
+      `<td><button class="btn ghost smallbtn" data-log-open="${l.id}">Open</button></td>`,
+      `</tr>`,
+    ].join(""));
+    html += buildTable(["When", "Action", "Status", "Detail"], rows);
+    html += `</div></section></div>`;
   }
   openModal(`Logs (instance ${instanceId})`, html);
 
@@ -278,4 +283,3 @@ document.addEventListener("DOMContentLoaded", () => {
   setupTheme();
   setupVersion();
 });
-

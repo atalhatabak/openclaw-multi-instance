@@ -79,7 +79,7 @@ def create_app() -> Flask:
     def start_instance(instance_id: int) -> Response:
         try:
             instance = get_instance(instance_id)
-            output = compose_up(instance["project_name"], instance_id=instance_id)
+            output = compose_up(instance, instance_id=instance_id)
             flash(f"Start tamamlandı. {compact_text(output)}", "success")
         except Exception as exc:
             flash(safe_user_error(exc), "error")
@@ -89,7 +89,7 @@ def create_app() -> Flask:
     def stop_instance(instance_id: int) -> Response:
         try:
             instance = get_instance(instance_id)
-            output = compose_stop(instance["project_name"], instance_id=instance_id)
+            output = compose_stop(instance, instance_id=instance_id)
             flash(f"Stop tamamlandı. {compact_text(output)}", "success")
         except Exception as exc:
             flash(safe_user_error(exc), "error")
@@ -109,15 +109,6 @@ def create_app() -> Flask:
                 check=False,
             )
             if result.ok:
-                # Refresh version from the updated image and persist it.
-                info = get_openclaw_version(instance.get("version") or DEFAULT_OPENCLAW_VERSION)
-                new_version = info.image_version or info.default_version
-                with get_conn() as conn:
-                    conn.execute(
-                        "UPDATE instances SET version = ?, last_update_check_at = CURRENT_TIMESTAMP WHERE id = ?",
-                        (new_version, instance_id),
-                    )
-                    conn.commit()
                 flash(f"Güncelleme tamamlandı. {compact_text(result.stdout or '')}", "success")
             else:
                 raise AppError(f"Güncelleme başarısız. Log: {result.log_file_path}")
@@ -220,7 +211,7 @@ def fetch_instances() -> list[dict[str, Any]]:
             """
             SELECT
                 id, domain, domain_short, project_name, volume_name,
-                gateway_port, bridge_port, version,
+                gateway_port, bridge_port, version, gateway_bind,
                 channel_choice, channel_bot_token,
                 allow_from, token, openrouter_token,
                 created_at, image, current_image_id, last_update_check_at
@@ -256,7 +247,10 @@ def create_instance_from_form(form: dict[str, str]) -> str:
         raise AppError(f"Deploy script bulunamadı: {DEPLOY_SCRIPT}")
 
     core_domain = (form.get("domain") or "").strip()
-    resolved = resolve_domain(core_domain)
+    try:
+        resolved = resolve_domain(core_domain)
+    except ValueError as exc:
+        raise AppError(str(exc)) from exc
 
     openrouter_api_key = (form.get("openrouter_api_key") or "").strip()
     if not openrouter_api_key:
@@ -311,10 +305,9 @@ def create_instance_from_form(form: dict[str, str]) -> str:
 
 def delete_instance_resources(instance: dict[str, Any]) -> str:
     instance_id = int(instance["id"])
-    project_name = instance["project_name"]
     volume_name = instance["volume_name"]
 
-    compose_out = compose_down_and_remove_volume(project_name, instance_id=instance_id)
+    compose_out = compose_down_and_remove_volume(instance, instance_id=instance_id)
     net_out = docker_network_prune(instance_id=instance_id)
     vol_out = docker_volume_rm(volume_name, instance_id=instance_id)
 
@@ -351,4 +344,3 @@ app = create_app()
 if __name__ == "__main__":
     db.init_db()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5050")), debug=True)
-
