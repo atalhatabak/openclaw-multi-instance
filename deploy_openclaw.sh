@@ -227,6 +227,7 @@ DOCKER_BUILDKIT=1 docker build \
   -t "$OPENCLAW_IMAGE" \
   -f "$OPENCLAW_DOCKERFILE" \
   "$OPENCLAW_SRC_DIR"
+  
 
 docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || {
   docker volume create "$OPENCLAW_HOME_VOLUME" >/dev/null
