@@ -55,6 +55,12 @@ a {
   gap: 24px;
 }
 
+.launch-shell {
+  min-height: calc(100vh - 64px);
+  display: grid;
+  place-items: center;
+}
+
 .hero-card,
 .panel,
 .stat-card {
@@ -106,6 +112,25 @@ a {
   max-width: 560px;
   justify-self: end;
   width: 100%;
+}
+
+.launch-panel {
+  max-width: 720px;
+  width: 100%;
+}
+
+.profile-shell .split-panel {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.profile-stats strong.mono {
+  font-size: 1.1rem;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.profile-note {
+  margin: 18px 0;
 }
 
 .topbar,
@@ -235,6 +260,11 @@ input:focus {
   color: var(--text);
 }
 
+.btn.danger {
+  background: var(--danger);
+  color: #fff4f1;
+}
+
 .text-link {
   color: var(--brand-strong);
   font-weight: 700;
@@ -294,6 +324,17 @@ input:focus {
   border-bottom: 0;
 }
 
+.status-row.status-running,
+.status-row.status-assigned,
+.status-row.status-starting {
+  background: rgba(18, 108, 99, 0.05);
+}
+
+.status-row.status-stopped,
+.status-row.status-error {
+  background: rgba(179, 61, 51, 0.06);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -320,6 +361,12 @@ input:focus {
 
 .empty-cell {
   text-align: center;
+}
+
+.action-stack {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 1040px) {

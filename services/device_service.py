@@ -88,3 +88,12 @@ def approve_device(project_name: str, device_id: str, *, instance_id: Optional[i
     ]
     out = _run_openclaw_cli(project_name, candidates, instance_id=instance_id)
     return out or "Approve command executed."
+
+
+def approve_latest_device(project_name: str, *, instance_id: Optional[int] = None) -> str:
+    candidates: list[list[str]] = [
+        ["openclaw", "devices", "approve", "--latest"],
+        ["/usr/local/bin/openclaw", "devices", "approve", "--latest"],
+    ]
+    out = _run_openclaw_cli(project_name, candidates, instance_id=instance_id)
+    return out or "Latest approve command executed."

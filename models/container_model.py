@@ -29,6 +29,13 @@ def get_container_by_id(container_id: int) -> dict[str, Any] | None:
     return row_to_dict(row)
 
 
+def delete_container(container_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM container_allocations WHERE container_id = ?", (container_id,))
+        conn.execute("DELETE FROM containers WHERE id = ?", (container_id,))
+        conn.commit()
+
+
 def get_assigned_container_for_user(user_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         row = conn.execute(
@@ -220,5 +227,21 @@ def update_container_runtime(
         conn.execute(
             f"UPDATE containers SET {', '.join(updates)} WHERE id = ?",
             params,
+        )
+        conn.commit()
+
+
+def update_container_gateway_token(container_id: int, gateway_token: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE containers
+            SET
+                gateway_token = ?,
+                updated_at = CURRENT_TIMESTAMP,
+                last_used_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (gateway_token, container_id),
         )
         conn.commit()

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Profil | OpenClaw{% endblock %}
+
+{% block body %}
+  <main class="admin-shell profile-shell" data-launch-gateway="{{ '1' if launch_gateway else '0' }}" data-approve-url="{{ url_for('web.approve_latest_pairing') }}">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Kullanici Profili</p>
+        <h1>{{ user.username }} icin kontrol merkezi</h1>
+        <p class="muted">Hesap bilgilerini yonetin, gateway oturumunu acin ve cihaz onayini tek yerden takip edin.</p>
+      </div>
+      <nav class="topnav">
+        {% if gateway_url %}
+          <a class="btn secondary" href="{{ gateway_url }}" target="_blank" rel="noopener">Dashboard ac</a>
+        {% endif %}
+        <a class="btn ghost" href="{{ url_for('web.home') }}">Login sayfasi</a>
+      </nav>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <section class="stats-grid profile-stats">
+      <article class="stat-card">
+        <span>Kullanici</span>
+        <strong>{{ user.username }}</strong>
+      </article>
+      <article class="stat-card">
+        <span>Container</span>
+        <strong class="mono">{{ container.container_name if container else '-' }}</strong>
+      </article>
+      <article class="stat-card">
+        <span>Durum</span>
+        <strong>{{ container.status if container else 'bekleniyor' }}</strong>
+      </article>
+      <article class="stat-card">
+        <span>Son giris</span>
+        <strong>{{ user.last_login_at or '-' }}</strong>
+      </article>
+    </section>
+
+    <section class="panel split-panel">
+      <div class="panel-section">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Hesap Ayarlari</p>
+            <h2>Parola ve API anahtarlari</h2>
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('web.update_account') }}" class="form-grid">
+          <label class="field">
+            <span>Username</span>
+            <input type="text" value="{{ user.username }}" disabled>
+          </label>
+          <label class="field">
+            <span>Yeni Password</span>
+            <input type="password" name="password" placeholder="Bos birakirsan degismez">
+          </label>
+          <label class="field field-wide">
+            <span>OpenRouter API Key</span>
+            <input type="password" name="openrouter_api_key" placeholder="Bos birakirsan mevcut deger korunur">
+          </label>
+          <label class="field field-wide">
+            <span>OpenRouter API Key 2</span>
+            <input type="password" name="openrouter_api_key2" placeholder="Bos birakirsan mevcut deger korunur">
+          </label>
+          <button class="btn primary" type="submit">Hesap bilgilerini guncelle</button>
+        </form>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Gateway</p>
+            <h2>Oturum ve cihaz islemleri</h2>
+          </div>
+        </div>
+
+        <div class="hero-note profile-note">
+          Profil sayfasi acildiginda son pairing istegi sessizce onaylanir. Bekleyen cihaz yoksa herhangi bir hata gosterilmez.
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <span>Gateway URL</span>
+            <input type="text" value="{{ gateway_url or '' }}" readonly>
+          </div>
+          <div class="field">
+            <span>Container</span>
+            <input type="text" value="{{ container.container_name if container else '' }}" readonly>
+          </div>
+          <button class="btn ghost" type="button" id="approveLatestButton">Son cihaz istegini sessizce onayla</button>
+        </div>
+      </div>
+    </section>
+  </main>
+{% endblock %}

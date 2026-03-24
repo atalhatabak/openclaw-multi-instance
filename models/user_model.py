@@ -128,6 +128,33 @@ def update_user_provisioning(
         conn.commit()
 
 
+def update_user_account(
+    user_id: int,
+    *,
+    password_hash: str | None = None,
+    openrouter_api_key: str | None = None,
+    openrouter_api_key2: str | None = None,
+) -> None:
+    updates: list[str] = ["updated_at = CURRENT_TIMESTAMP"]
+    params: list[Any] = []
+    if password_hash is not None:
+        updates.append("password_hash = ?")
+        params.append(password_hash)
+    if openrouter_api_key is not None:
+        updates.append("openrouter_api_key = ?")
+        params.append(openrouter_api_key)
+    if openrouter_api_key2 is not None:
+        updates.append("openrouter_api_key2 = ?")
+        params.append(openrouter_api_key2)
+    params.append(user_id)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+
+
 def deactivate_user(user_id: int) -> None:
     with get_conn() as conn:
         conn.execute(
@@ -138,6 +165,29 @@ def deactivate_user(user_id: int) -> None:
             """,
             (user_id,),
         )
+        conn.commit()
+
+
+def delete_user_with_related_rows(user_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE containers
+            SET
+                assigned_user_id = NULL,
+                assigned_volume_name = NULL,
+                status = CASE
+                    WHEN status = 'error' THEN 'error'
+                    ELSE 'available'
+                END,
+                updated_at = CURRENT_TIMESTAMP,
+                last_used_at = CURRENT_TIMESTAMP
+            WHERE assigned_user_id = ?
+            """,
+            (user_id,),
+        )
+        conn.execute("DELETE FROM container_allocations WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
 
 

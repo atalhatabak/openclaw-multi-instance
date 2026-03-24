@@ -58,6 +58,34 @@ def create_user_from_form(form: dict[str, str]) -> dict[str, Any]:
         raise
 
 
+def rollback_user_creation(user_id: int) -> None:
+    user_model.delete_user_with_related_rows(user_id)
+
+
+def update_user_account_from_form(user: dict[str, Any], form: dict[str, str]) -> dict[str, Any]:
+    password = (form.get("password") or "").strip()
+    openrouter_api_key = (form.get("openrouter_api_key") or "").strip()
+    openrouter_api_key2 = (form.get("openrouter_api_key2") or "").strip()
+
+    password_hash = generate_password_hash(password) if password else None
+    primary_key = openrouter_api_key or None
+    secondary_key = openrouter_api_key2 or None
+
+    if password_hash is None and primary_key is None and secondary_key is None:
+        raise AppError("Guncellenecek en az bir alan girin.")
+
+    user_model.update_user_account(
+        int(user["id"]),
+        password_hash=password_hash,
+        openrouter_api_key=primary_key,
+        openrouter_api_key2=secondary_key,
+    )
+    refreshed = user_model.get_user_by_id(int(user["id"]))
+    if refreshed is None:
+        raise AppError("Kullanici kaydi okunamadi.")
+    return refreshed
+
+
 def authenticate_user(username: str, password: str) -> dict[str, Any]:
     user = user_model.get_user_by_username(normalize_username(username))
     if user is None or not user.get("is_active"):
