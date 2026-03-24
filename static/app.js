@@ -10,6 +10,67 @@ function normalize(value) {
   return (value || "").toString().toLowerCase().trim();
 }
 
+function getSystemTheme() {
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function getPreferredTheme() {
+  try {
+    return localStorage.getItem("theme-preference") || getSystemTheme();
+  } catch (err) {
+    return getSystemTheme();
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+}
+
+function setupThemeToggle() {
+  const toggle = qs("#themeToggle");
+  if (!toggle) return;
+
+  const label = qs(".theme-toggle-label", toggle);
+  const mediaQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+  const syncButton = (theme) => {
+    const isDark = theme === "dark";
+    toggle.setAttribute("aria-pressed", isDark ? "true" : "false");
+    toggle.setAttribute("title", isDark ? "Light moda gec" : "Dark moda gec");
+    if (label) {
+      label.textContent = isDark ? "Light" : "Dark";
+    }
+  };
+
+  const updateTheme = (theme, persist) => {
+    applyTheme(theme);
+    syncButton(theme);
+    if (!persist) return;
+    try {
+      localStorage.setItem("theme-preference", theme);
+    } catch (err) {
+    }
+  };
+
+  updateTheme(getPreferredTheme(), false);
+
+  toggle.addEventListener("click", () => {
+    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    updateTheme(nextTheme, true);
+  });
+
+  if (mediaQuery) {
+    mediaQuery.addEventListener("change", (event) => {
+      try {
+        const storedTheme = localStorage.getItem("theme-preference");
+        if (storedTheme) return;
+      } catch (err) {
+      }
+      updateTheme(event.matches ? "dark" : "light", false);
+    });
+  }
+}
+
 function setupUserSearch() {
   const input = qs("#userSearch");
   const rows = qsa("[data-user-row]");
@@ -85,6 +146,7 @@ function setupProfileAutomation() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  setupThemeToggle();
   setupDashboardPreopen();
   setupUserSearch();
   setupProfileAutomation();

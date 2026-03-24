@@ -4,11 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}OpenClaw Multi User{% endblock %}</title>
+  <script>
+    (function () {
+      try {
+        const storedTheme = localStorage.getItem("theme-preference");
+        const systemPrefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = storedTheme || (systemPrefersDark ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+      } catch (err) {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
   <div class="layout">
+    <div class="layout-head">
+      <button
+        class="theme-toggle"
+        type="button"
+        id="themeToggle"
+        aria-label="Tema degistir"
+        aria-live="polite"
+        title="Light ve dark mode arasinda gecis yap"
+      >
+        <span class="theme-toggle-track">
+          <span class="theme-toggle-icon theme-toggle-icon-sun" aria-hidden="true">☀</span>
+          <span class="theme-toggle-thumb"></span>
+          <span class="theme-toggle-icon theme-toggle-icon-moon" aria-hidden="true">☾</span>
+        </span>
+        <span class="theme-toggle-label">Dark modeaa</span>
+      </button>
+    </div>
     {% block body %}{% endblock %}
   </div>
 </body>
