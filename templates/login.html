@@ -6,14 +6,13 @@
   <main class="login-shell">
     <section class="hero-card">
       <p class="eyebrow">OpenClaw Assistant</p>
-      <h1>OpenClaw asistan girisi</h1>
+      <h1 >OpenClaw kullanıcı girisi</h1>
       <p class="muted">
-        Kurumsal OpenClaw calisma alaniniza guvenli sekilde erisin. Giris sonrasinda size atanmis
+        Giris sonrasinda size atanmis
         oturum otomatik hazirlanir ve uygun asistana yonlendirilirsiniz.
       </p>
       <div class="hero-note">
-        Ayrilmis container yapisi sayesinde her kullanici kendi calisma ortami ile devam eder.
-        Gerekirse kapalI servisler otomatik baslatilir ve oturum hazir oldugunda yonlendirme yapilir.
+        Giriş sonrası açılan profil sayfasından parola ve token gibi bilgileri değiştirebilirsiniz.
       </div>
     </section>
 
@@ -38,11 +37,11 @@
       <form method="post" action="{{ url_for('web.login') }}" class="form-grid" data-preopen-dashboard="1">
         <label class="field">
           <span>Username</span>
-          <input type="text" name="username" placeholder="ornek kullanici" required>
+          <input type="text" name="username" placeholder="Kullanıcı Adı" required>
         </label>
         <label class="field">
           <span>Password</span>
-          <input type="password" name="password" placeholder="Sadece login icin kullanilir" required>
+          <input type="password" name="password" placeholder="Parola" required>
         </label>
         <button class="btn primary" type="submit">Giris yap ve yonlendir</button>
       </form>

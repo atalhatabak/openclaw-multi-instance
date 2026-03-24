@@ -17,8 +17,6 @@ fi
 
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
-OPENCLAW_SRC_DIR="$ROOT_DIR/openclaw"
-OPENCLAW_DOCKERFILE="./Dockerfile"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 LOCK_FILE="${OPENCLAW_LOCK_FILE:-$ROOT_DIR/.openclaw_deploy.lock}"
 
@@ -106,8 +104,6 @@ docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
 have python3 || fail "python3 is not installed"
 [[ -f "$COMPOSE_FILE" ]] || fail "docker-compose.yml not found in $ROOT_DIR"
 [[ -f "$PY_DB_SCRIPT" ]] || fail "instance_db.py not found in $ROOT_DIR"
-[[ -d "$OPENCLAW_SRC_DIR" ]] || fail "openclaw source directory not found in $OPENCLAW_SRC_DIR"
-[[ -f "$OPENCLAW_DOCKERFILE" ]] || fail "Dockerfile not found in $OPENCLAW_DOCKERFILE"
 # have flock || fail "flock is not installed"
 
 python3 "$PY_DB_SCRIPT" --db "$DB_PATH" init >/dev/null
@@ -222,16 +218,10 @@ set +a
 : "${OPENCLAW_IMAGE:?missing}"
 : "${OPENROUTER_API_KEY:?missing}"
 
-echo "Building OpenClaw image from local source..."
-echo "  source dir : $OPENCLAW_SRC_DIR"
-echo "  dockerfile : $OPENCLAW_DOCKERFILE"
-echo "  image      : $OPENCLAW_IMAGE"
+docker image inspect "$OPENCLAW_IMAGE" >/dev/null 2>&1 || \
+  fail "Docker image bulunamadi: $OPENCLAW_IMAGE. Once clone_and_patch_source_code.sh ile image hazirla."
 
-DOCKER_BUILDKIT=1 docker build \
-  -t "$OPENCLAW_IMAGE" \
-  -f "$OPENCLAW_DOCKERFILE" \
-  "$OPENCLAW_SRC_DIR"
-  
+echo "Using prebuilt OpenClaw image: $OPENCLAW_IMAGE"
 
 docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || {
   docker volume create "$OPENCLAW_HOME_VOLUME" >/dev/null

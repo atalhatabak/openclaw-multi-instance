@@ -4,6 +4,9 @@ set -Eeuo pipefail
 REPO_URL="https://github.com/openclaw/openclaw.git"
 TARGET_DIR="openclaw"
 TARGET_FILE="ui/src/ui/storage.ts"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOCKERFILE_PATH="$ROOT_DIR/Dockerfile"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xen-openclaw}"
 
 log() {
   printf '[INFO] %s\n' "$1"
@@ -26,6 +29,7 @@ require_cmd() {
 
 require_cmd git
 require_cmd python3
+require_cmd docker
 
 clone_if_needed() {
   if [ -d "$TARGET_DIR/.git" ]; then
@@ -96,6 +100,7 @@ patch_file() {
   fi
 
   python3 - "$file" <<'PY'
+import re
 import sys
 from pathlib import Path
 
@@ -108,14 +113,28 @@ function_block = """function getGatewayUrlFromQuery(): string | null {
     const raw = params.get("url")?.trim();
     if (!raw) return null;
 
-    const base = `${location.protocol}//${location.host}`;
-    const parsed = new URL(raw, base);
+    let portSuffix = "";
 
-    if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
-      return null;
+    if (/^\\d{4}$/.test(raw)) {
+      portSuffix = raw;
+    } else if (/^2\\d{4}$/.test(raw)) {
+      portSuffix = raw.slice(1);
+    } else {
+      const base = `${location.protocol}//${location.host}`;
+      const parsed = new URL(raw, base);
+
+      if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+        return null;
+      }
+
+      if (!/^2\\d{4}$/.test(parsed.port)) {
+        return null;
+      }
+
+      portSuffix = parsed.port.slice(1);
     }
 
-    return parsed.toString();
+    return `ws://127.0.0.1:2${portSuffix}`;
   } catch {
     return null;
   }
@@ -134,10 +153,36 @@ query_block = """  const queryUrl = getGatewayUrlFromQuery();
   }
 """
 
-changed = False
+load_settings_block_old = """    const parsedGatewayUrl =
+      typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
+        ? parsed.gatewayUrl.trim()
+        : defaults.gatewayUrl;
+    const gatewayUrl = parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl;
+"""
 
-if "function getGatewayUrlFromQuery(): string | null {" in text:
-    print("[INFO] getGatewayUrlFromQuery fonksiyonu zaten mevcut.")
+load_settings_block_new = """    const queryUrl = getGatewayUrlFromQuery();
+    const parsedGatewayUrl =
+      typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
+        ? parsed.gatewayUrl.trim()
+        : defaults.gatewayUrl;
+    const gatewayUrl = queryUrl ?? (parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl);
+"""
+
+changed = False
+function_pattern = re.compile(
+    r"function getGatewayUrlFromQuery\(\): string \| null \{\n(?:.*?\n)\}\n",
+    re.DOTALL,
+)
+
+match = function_pattern.search(text)
+if match:
+    existing_function = match.group(0)
+    if existing_function == function_block:
+        print("[INFO] getGatewayUrlFromQuery fonksiyonu zaten guncel.")
+    else:
+        text = text[:match.start()] + function_block + text[match.end():]
+        print("[INFO] getGatewayUrlFromQuery fonksiyonu guncellendi.")
+        changed = True
 else:
     if function_anchor not in text:
         print("[ERROR] deriveDefaultGatewayUrl fonksiyon anchor'ı bulunamadı.")
@@ -158,6 +203,17 @@ else:
     print("[INFO] queryUrl override bloğu eklendi.")
     changed = True
 
+if load_settings_block_new in text:
+    print("[INFO] loadSettings query override bloğu zaten guncel.")
+else:
+    if load_settings_block_old not in text:
+        print("[ERROR] loadSettings gatewayUrl bloğu bulunamadı.")
+        sys.exit(1)
+
+    text = text.replace(load_settings_block_old, load_settings_block_new, 1)
+    print("[INFO] loadSettings query override bloğu guncellendi.")
+    changed = True
+
 if changed:
     file_path.write_text(text, encoding="utf-8")
     print("[INFO] Dosya güncellendi.")
@@ -166,17 +222,43 @@ else:
 PY
 }
 
+build_image() {
+  local source_dir="$1"
+
+  if [ ! -d "$source_dir" ]; then
+    err "Kaynak klasoru bulunamadi: $source_dir"
+    exit 1
+  fi
+
+  if [ ! -f "$DOCKERFILE_PATH" ]; then
+    err "Dockerfile bulunamadi: $DOCKERFILE_PATH"
+    exit 1
+  fi
+
+  log "OpenClaw image build basliyor..."
+  log "  source dir : $source_dir"
+  log "  dockerfile : $DOCKERFILE_PATH"
+  log "  image      : $OPENCLAW_IMAGE"
+
+  DOCKER_BUILDKIT=1 docker build \
+    -t "$OPENCLAW_IMAGE" \
+    -f "$DOCKERFILE_PATH" \
+    "$source_dir"
+}
+
 main() {
   clone_if_needed
 
   cd "$TARGET_DIR"
   pull_safely
   patch_file "$TARGET_FILE"
+  build_image "$PWD"
 
   log "Tamamlandı."
   log "Kontrol için:"
   log "  cd $TARGET_DIR"
   log "  git diff -- $TARGET_FILE"
+  log "  docker image inspect $OPENCLAW_IMAGE"
   log "  git status"
 }
 
