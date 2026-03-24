@@ -35,11 +35,12 @@
               <th>Heartbeat</th>
               <th>Started</th>
               <th>Stopped</th>
+              <th>Islem</th>
             </tr>
           </thead>
           <tbody>
             {% for container in containers %}
-              <tr>
+              <tr class="status-row status-{{ container.status }}">
                 <td>{{ container.container_name }}</td>
                 <td><span class="badge">{{ container.status }}</span></td>
                 <td>{{ container.host }}</td>
@@ -49,10 +50,23 @@
                 <td>{{ container.last_heartbeat_at or '-' }}</td>
                 <td>{{ container.started_at or '-' }}</td>
                 <td>{{ container.stopped_at or '-' }}</td>
+                <td>
+                  <div class="action-stack">
+                    {% if container.status in ['stopped', 'error'] %}
+                      <form method="post" action="{{ url_for('web.start_container_action', container_id=container.id) }}">
+                        <button class="btn secondary" type="submit">Calistir</button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="{{ url_for('web.stop_container_action', container_id=container.id) }}" onsubmit="return confirm('Container durdurulsun mu?')">
+                        <button class="btn ghost" type="submit">Durdur</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
               </tr>
             {% else %}
               <tr>
-                <td colspan="9" class="muted empty-cell">Henuz container kaydi yok.</td>
+                <td colspan="10" class="muted empty-cell">Henuz container kaydi yok.</td>
               </tr>
             {% endfor %}
           </tbody>

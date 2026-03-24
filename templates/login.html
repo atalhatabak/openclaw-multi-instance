@@ -5,24 +5,24 @@
 {% block body %}
   <main class="login-shell">
     <section class="hero-card">
-      <p class="eyebrow">Gateway Login</p>
-      <h1>Kullaniciya ozel OpenClaw erisimi</h1>
+      <p class="eyebrow">OpenClaw Assistant</p>
+      <h1>OpenClaw asistan girisi</h1>
       <p class="muted">
-        Password sadece bu panelde dogrulama icindir. Gateway token ise login sifresinden ayridir ve
-        backend tarafinda yonlendirme icin kullanilir.
+        Kurumsal OpenClaw calisma alaniniza guvenli sekilde erisin. Giris sonrasinda size atanmis
+        oturum otomatik hazirlanir ve uygun asistana yonlendirilirsiniz.
       </p>
       <div class="hero-note">
-        Her kullanici icin kayitta tek bir container acilir. Login sonrasi container kapaliysa start edilir ve dashboard'a yonlendirilirsin.
+        Ayrilmis container yapisi sayesinde her kullanici kendi calisma ortami ile devam eder.
+        Gerekirse kapalI servisler otomatik baslatilir ve oturum hazir oldugunda yonlendirme yapilir.
       </div>
     </section>
 
     <section class="panel auth-panel">
       <div class="panel-header compact">
         <div>
-          <p class="eyebrow">Erisim</p>
-          <h2>Kayit ol veya giris yap</h2>
+          <p class="eyebrow">Giris</p>
+          <h2>Hesabinizla devam edin</h2>
         </div>
-        <a class="text-link" href="{{ url_for('web.admin_dashboard') }}">Admin panel</a>
       </div>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
@@ -35,7 +35,7 @@
         {% endif %}
       {% endwith %}
 
-      <form method="post" action="{{ url_for('web.login') }}" class="form-grid">
+      <form method="post" action="{{ url_for('web.login') }}" class="form-grid" data-preopen-dashboard="1">
         <label class="field">
           <span>Username</span>
           <input type="text" name="username" placeholder="ornek kullanici" required>
@@ -44,27 +44,7 @@
           <span>Password</span>
           <input type="password" name="password" placeholder="Sadece login icin kullanilir" required>
         </label>
-        <button class="btn primary" type="submit">Login ve yonlendir</button>
-      </form>
-
-      <form method="post" action="{{ url_for('web.register') }}" class="form-grid" style="margin-top: 1.5rem;">
-        <label class="field">
-          <span>Yeni Username</span>
-          <input type="text" name="username" placeholder="yeni kullanici" required>
-        </label>
-        <label class="field">
-          <span>Yeni Password</span>
-          <input type="password" name="password" placeholder="Login sifresi" required>
-        </label>
-        <label class="field field-wide">
-          <span>OpenRouter API Key</span>
-          <input type="password" name="openrouter_api_key" placeholder="or-v1-..." required>
-        </label>
-        <label class="field field-wide">
-          <span>OpenRouter API Key 2 (opsiyonel)</span>
-          <input type="password" name="openrouter_api_key2" placeholder="Ikinci key gerekirse">
-        </label>
-        <button class="btn secondary" type="submit">Kayit ol ve container ac</button>
+        <button class="btn primary" type="submit">Giris yap ve yonlendir</button>
       </form>
     </section>
   </main>

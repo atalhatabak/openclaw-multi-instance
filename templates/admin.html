@@ -7,8 +7,8 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">Admin Panel</p>
-        <h1>Kullaniciya ozel container paneli</h1>
-        <p class="muted">Her kullanici kendi OpenClaw containeri ve volume'u ile kayitlidir.</p>
+        <h1>OpenClaw kullanici ve oturum yonetimi</h1>
+        <p class="muted">Kullanici olusturma, oturum baslatma ve container dagitimini tek panelden yonetin.</p>
       </div>
       <nav class="topnav">
         <a class="btn ghost" href="{{ url_for('web.home') }}">Login</a>
@@ -50,16 +50,16 @@
         <div class="panel-header compact">
           <div>
             <p class="eyebrow">Yeni kullanici</p>
-            <h2>Kayit olustur</h2>
+            <h2>Hesap olustur ve container hazirla</h2>
           </div>
         </div>
         <form method="post" action="{{ url_for('web.create_user') }}" class="form-grid">
           <label class="field">
-            <span>Username</span>
-            <input type="text" name="username" placeholder="username" required>
+            <span>Yeni Username</span>
+            <input type="text" name="username" placeholder="yeni kullanici" required>
           </label>
           <label class="field">
-            <span>Password</span>
+            <span>Yeni Password</span>
             <input type="password" name="password" placeholder="Login sifresi" required>
           </label>
           <label class="field field-wide">
@@ -68,9 +68,9 @@
           </label>
           <label class="field field-wide">
             <span>OpenRouter API Key 2 (opsiyonel)</span>
-            <input type="password" name="openrouter_api_key2" placeholder="Ileride yedek veya farkli kullanim icin">
+            <input type="password" name="openrouter_api_key2" placeholder="Ikinci key gerekirse">
           </label>
-          <button class="btn primary" type="submit">Kullanici olustur</button>
+          <button class="btn primary" type="submit">Kayit olustur ve container ac</button>
         </form>
       </div>
 
@@ -129,9 +129,14 @@
                   </td>
                   <td>{{ user.created_at }}</td>
                   <td>
-                    <form method="post" action="{{ url_for('web.launch_user_session', user_id=user.id) }}">
-                      <button class="btn secondary" type="submit">Login ol</button>
-                    </form>
+                    <div class="action-stack">
+                      <form method="post" action="{{ url_for('web.launch_user_session', user_id=user.id) }}">
+                        <button class="btn secondary" type="submit">Login ol</button>
+                      </form>
+                      <form method="post" action="{{ url_for('web.delete_user', user_id=user.id) }}" onsubmit="return confirm('Bu kullanici, volume ve container tamamen silinecek. Devam edilsin mi?')">
+                        <button class="btn danger" type="submit">Sil</button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               {% else %}
@@ -163,11 +168,12 @@
               <th>Assigned user</th>
               <th>Assigned volume</th>
               <th>Last used</th>
+              <th>Islem</th>
             </tr>
           </thead>
           <tbody>
             {% for container in containers %}
-              <tr>
+              <tr class="status-row status-{{ container.status }}">
                 <td>{{ container.container_name }}</td>
                 <td><span class="badge">{{ container.status }}</span></td>
                 <td>{{ container.host }}</td>
@@ -175,10 +181,23 @@
                 <td>{{ container.assigned_username or '-' }}</td>
                 <td>{{ container.assigned_volume_name or '-' }}</td>
                 <td>{{ container.last_used_at or container.last_heartbeat_at or '-' }}</td>
+                <td>
+                  <div class="action-stack">
+                    {% if container.status in ['stopped', 'error'] %}
+                      <form method="post" action="{{ url_for('web.start_container_action', container_id=container.id) }}">
+                        <button class="btn secondary" type="submit">Calistir</button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="{{ url_for('web.stop_container_action', container_id=container.id) }}" onsubmit="return confirm('Container durdurulsun mu?')">
+                        <button class="btn ghost" type="submit">Durdur</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
               </tr>
             {% else %}
               <tr>
-                <td colspan="7" class="muted empty-cell">Henuz container kaydi yok.</td>
+                <td colspan="8" class="muted empty-cell">Henuz container kaydi yok.</td>
               </tr>
             {% endfor %}
           </tbody>

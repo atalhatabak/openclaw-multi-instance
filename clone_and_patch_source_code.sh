@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 REPO_URL="https://github.com/openclaw/openclaw.git"
 TARGET_DIR="openclaw"
-TARGET_FILE="ui/src/ui/views/login-gate.ts"
+TARGET_FILE="ui/src/ui/storage.ts"
 
 log() {
   printf '[INFO] %s\n' "$1"
@@ -39,7 +39,8 @@ clone_if_needed() {
   fi
 
   log "Repo clone ediliyor..."
-  git clone "$REPO_URL" "$TARGET_DIR"
+  log "git clone $REPO_URL"
+  git clone "$REPO_URL"
 }
 
 has_local_changes() {
@@ -51,8 +52,10 @@ has_local_changes() {
 pull_safely() {
   local stashed=0
   local before after
+  local current_branch
 
   before="$(git rev-parse HEAD)"
+  current_branch="$(git rev-parse --abbrev-ref HEAD)"
 
   if has_local_changes; then
     log "Local değişiklikler bulundu, stash alınıyor..."
@@ -62,13 +65,6 @@ pull_safely() {
 
   log "Remote güncellemeler alınıyor..."
   git fetch origin
-
-  if git rev-parse --verify origin/HEAD >/dev/null 2>&1; then
-    :
-  fi
-
-  local current_branch
-  current_branch="$(git rev-parse --abbrev-ref HEAD)"
 
   log "Branch güncelleniyor: $current_branch"
   git pull --ff-only origin "$current_branch"
@@ -106,31 +102,61 @@ from pathlib import Path
 file_path = Path(sys.argv[1])
 text = file_path.read_text(encoding="utf-8")
 
-old1 = '.value=${state.settings.gatewayUrl}'
-new1 = '.value=${e.settings.token.split(";")[0]}'
+function_block = """function getGatewayUrlFromQuery(): string | null {
+  try {
+    const params = new URLSearchParams(location.search);
+    const raw = params.get("url")?.trim();
+    if (!raw) return null;
 
-old2 = '.value=${state.settings.token}'
-new2 = '.value=${e.settings.token.split(";")[1]}'
+    const base = `${location.protocol}//${location.host}`;
+    const parsed = new URL(raw, base);
+
+    if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+"""
+
+function_anchor = """function deriveDefaultGatewayUrl(): { pageUrl: string; effectiveUrl: string } {
+"""
+
+insert_after = """  const pageUrl = `${proto}://${location.host}${basePath}`;
+"""
+
+query_block = """  const queryUrl = getGatewayUrlFromQuery();
+  if (queryUrl) {
+    return { pageUrl, effectiveUrl: queryUrl };
+  }
+"""
 
 changed = False
 
-if new1 in text:
-    print("[INFO] gatewayUrl patch zaten uygulanmış.")
-elif old1 in text:
-    text = text.replace(old1, new1)
-    print("[INFO] gatewayUrl patch uygulandı.")
-    changed = True
+if "function getGatewayUrlFromQuery(): string | null {" in text:
+    print("[INFO] getGatewayUrlFromQuery fonksiyonu zaten mevcut.")
 else:
-    print("[WARN] gatewayUrl için eski ifade bulunamadı, skip edildi.")
+    if function_anchor not in text:
+        print("[ERROR] deriveDefaultGatewayUrl fonksiyon anchor'ı bulunamadı.")
+        sys.exit(1)
 
-if new2 in text:
-    print("[INFO] token patch zaten uygulanmış.")
-elif old2 in text:
-    text = text.replace(old2, new2)
-    print("[INFO] token patch uygulandı.")
+    text = text.replace(function_anchor, function_block + "\n" + function_anchor, 1)
+    print("[INFO] getGatewayUrlFromQuery fonksiyonu eklendi.")
     changed = True
+
+if query_block in text:
+    print("[INFO] queryUrl override bloğu zaten mevcut.")
 else:
-    print("[WARN] token için eski ifade bulunamadı, skip edildi.")
+    if insert_after not in text:
+        print("[ERROR] pageUrl satırı bulunamadı.")
+        sys.exit(1)
+
+    text = text.replace(insert_after, insert_after + "\n" + query_block, 1)
+    print("[INFO] queryUrl override bloğu eklendi.")
+    changed = True
 
 if changed:
     file_path.write_text(text, encoding="utf-8")
@@ -145,11 +171,12 @@ main() {
 
   cd "$TARGET_DIR"
   pull_safely
-  # patch_file "$TARGET_FILE"
+  patch_file "$TARGET_FILE"
 
   log "Tamamlandı."
   log "Kontrol için:"
   log "  cd $TARGET_DIR"
+  log "  git diff -- $TARGET_FILE"
   log "  git status"
 }
 
