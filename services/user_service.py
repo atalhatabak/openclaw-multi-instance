@@ -73,3 +73,12 @@ def mark_user_logged_in(user_id: int, *, gateway_url: str | None = None) -> None
 
 def mark_user_volume_prepared(user_id: int) -> None:
     user_model.update_user_runtime(user_id, volume_prepared=True)
+
+
+def sync_user_provisioning(user_id: int, *, volume_name: str, gateway_token: str) -> None:
+    user_model.update_user_provisioning(
+        user_id,
+        volume_name=volume_name,
+        gateway_token=gateway_token,
+    )
+    user_model.update_user_runtime(user_id, volume_prepared=True)

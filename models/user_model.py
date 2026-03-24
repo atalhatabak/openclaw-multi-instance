@@ -105,6 +105,29 @@ def update_user_runtime(
         conn.commit()
 
 
+def update_user_provisioning(
+    user_id: int,
+    *,
+    volume_name: str | None = None,
+    gateway_token: str | None = None,
+) -> None:
+    updates: list[str] = ["updated_at = CURRENT_TIMESTAMP"]
+    params: list[Any] = []
+    if volume_name is not None:
+        updates.append("volume_name = ?")
+        params.append(volume_name)
+    if gateway_token is not None:
+        updates.append("gateway_token = ?")
+        params.append(gateway_token)
+    params.append(user_id)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+
+
 def deactivate_user(user_id: int) -> None:
     with get_conn() as conn:
         conn.execute(

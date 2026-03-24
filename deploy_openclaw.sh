@@ -7,41 +7,51 @@ have() { command -v "$1" >/dev/null 2>&1; }
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
+if [[ -f "$ENV_BASE_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_BASE_FILE"
+  set +a
+fi
+
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
 OPENCLAW_SRC_DIR="$ROOT_DIR/openclaw"
-OPENCLAW_DOCKERFILE="$OPENCLAW_SRC_DIR/Dockerfile"
+OPENCLAW_DOCKERFILE="./Dockerfile"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 LOCK_FILE="${OPENCLAW_LOCK_FILE:-$ROOT_DIR/.openclaw_deploy.lock}"
-BASE_DOMAIN="${OPENCLAW_BASE_DOMAIN:-mebsclaw.com}"
 
 LOG_DIR="${OPENCLAW_LOG_DIR:-$ROOT_DIR/logs/deploy}"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_deploy.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-DOMAIN=""
+DOMAIN="${DOMAIN:-}"
 VERSION="latest"
-TELEGRAM_BOT_TOKEN=""
-TELEGRAM_ALLOW_FROM=""
-OPENROUTER_API_KEY=""
-OPENCLAW_GATEWAY_TOKEN=""
-OPENCLAW_GATEWAY_BIND="lan"
+TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+TELEGRAM_ALLOW_FROM="${TELEGRAM_ALLOW_FROM:-}"
+OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
+OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-claw}"
+OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xen-openclaw}"
 CHANNEL_CHOICE="web"
 
 usage() {
   cat <<EOF
 Usage:
   $0 \
-    --domain example.com \
-    --telegram-bot-token 123456:ABCDEF \
-    --telegram-allow-from 905551112233 \
-    --openrouter-api-key or-v1-xxxxx \
+    [--domain mebs.claw] \
+    [--telegram-bot-token 123456:ABCDEF] \
+    [--telegram-allow-from 905551112233] \
+    [--openrouter-api-key or-v1-xxxxx] \
     [--gateway-token my-token] \
     [--version latest] \
     [--gateway-bind lan]
 
 Notes:
+  - Varsayilanlar env.base dosyasindan okunur.
+  - Public origin tek domaine sabitlenir: https://DOMAIN
   - Portlar DB'den otomatik alınır.
   - İlk gateway port 20000, bridge port 20001'dir.
   - Her yeni instance 2 port ilerler.
@@ -88,14 +98,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$DOMAIN" ]] || fail "--domain is required"
+[[ -n "$DOMAIN" ]] || fail "DOMAIN env.base icinde veya --domain ile tanimli olmali"
 [[ -n "$OPENROUTER_API_KEY" ]] || fail "--openrouter-api-key is required"
-
-if [[ "$DOMAIN" != *.* ]]; then
-  DOMAIN="${DOMAIN}.${BASE_DOMAIN}"
-fi
-
-
 
 have docker || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
@@ -177,9 +181,9 @@ gateway_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.lo
 bridge_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["bridge_port"])')"
 
 domain_slug="$(slugify "$DOMAIN")"
-project_name="openclaw-${domain_slug}-${gateway_port}"
-volume_name="openclaw-volume-${domain_slug}-${gateway_port}"
-OPENCLAW_IMAGE="mebs-openclaw"
+instance_key="${DOMAIN}--${gateway_port}"
+project_name="openclaw-${gateway_port}"
+volume_name="openclaw-volume-${gateway_port}"
 
 if [[ -z "$OPENCLAW_GATEWAY_TOKEN" ]]; then
 #   OPENCLAW_GATEWAY_TOKEN="$(random_token)"
@@ -246,7 +250,7 @@ compose_cmd_tools=(docker compose -p "$project_name" --env-file "$env_file" --pr
   echo 'config setting: gateway mode/bind/allowed-origins'
   /usr/local/bin/openclaw config set gateway.mode local
   /usr/local/bin/openclaw config set gateway.bind $OPENCLAW_GATEWAY_BIND
-  /usr/local/bin/openclaw config set gateway.controlUi.allowedOrigins '[\"http://localhost:${OPENCLAW_GATEWAY_PORT}\",\"http://127.0.0.1:${OPENCLAW_GATEWAY_PORT}\",\"http://$DOMAIN\",\"https://$DOMAIN\"]' --strict-json
+  /usr/local/bin/openclaw config set gateway.controlUi.allowedOrigins '[\"https://$DOMAIN\"]' --strict-json
 
   echo 'Profile change with coding, Onboard starting'
   /usr/local/bin/openclaw config set tools.profile coding
@@ -255,7 +259,7 @@ compose_cmd_tools=(docker compose -p "$project_name" --env-file "$env_file" --pr
   echo 'Model, browser channels config'
   /usr/local/bin/openclaw models set openrouter/stepfun/step-3.5-flash:free
   /usr/local/bin/openclaw config set browser.enabled true
-  /usr/local/bin/openclaw config set browser.executablePath /usr/bin/google-chrome
+  /usr/local/bin/openclaw config set browser.executablePath /home/node/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome
   /usr/local/bin/openclaw config set browser.headless true
   /usr/local/bin/openclaw config set browser.noSandbox true
   /usr/local/bin/openclaw config set browser.defaultProfile openclaw
@@ -280,7 +284,7 @@ echo "Starting services"
 compose_started=1
 
 python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
-  --domain "$DOMAIN" \
+  --domain "$instance_key" \
   --domain-short "$domain_slug" \
   --project-name "$project_name" \
   --volume-name "$volume_name" \
@@ -302,26 +306,8 @@ trap - EXIT
 
 echo "Created instance successfully"
 echo "  domain  : $DOMAIN"
+echo "  key     : $instance_key"
 echo "  project : $project_name"
 echo "  volume  : $volume_name"
 echo "  ports   : $gateway_port, $bridge_port"
 echo "  Web Dashboard UI : http://127.0.0.1:$gateway_port/#token=$OPENCLAW_GATEWAY_TOKEN"
-
-NGINX_OUT_DIR="${OPENCLAW_NGINX_OUT_DIR:-$ROOT_DIR/generated/nginx}"
-mkdir -p "$NGINX_OUT_DIR"
-cat > "$NGINX_OUT_DIR/${DOMAIN}.conf" <<EOF
-server {
-  listen 80;
-  server_name ${DOMAIN};
-
-  location / {
-    proxy_pass http://127.0.0.1:${gateway_port};
-    proxy_http_version 1.1;
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-  }
-}
-EOF
-echo "  nginx conf: $NGINX_OUT_DIR/${DOMAIN}.conf"

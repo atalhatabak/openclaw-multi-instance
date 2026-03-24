@@ -52,6 +52,8 @@ CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 
 CREATE TABLE IF NOT EXISTS containers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id INTEGER,
+    project_name TEXT,
     container_name TEXT NOT NULL UNIQUE,
     docker_container_id TEXT,
     host TEXT NOT NULL DEFAULT 'mebs.claw',
@@ -59,12 +61,14 @@ CREATE TABLE IF NOT EXISTS containers (
     status TEXT NOT NULL DEFAULT 'available',
     assigned_user_id INTEGER,
     assigned_volume_name TEXT,
+    gateway_token TEXT,
     last_heartbeat_at DATETIME,
     last_used_at DATETIME,
     started_at DATETIME,
     stopped_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(instance_id) REFERENCES instances(id),
     FOREIGN KEY(assigned_user_id) REFERENCES users(id)
 );
 
@@ -150,12 +154,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE users ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP")
 
     if _table_exists(conn, "containers"):
+        if not _column_exists(conn, "containers", "instance_id"):
+            conn.execute("ALTER TABLE containers ADD COLUMN instance_id INTEGER")
+        if not _column_exists(conn, "containers", "project_name"):
+            conn.execute("ALTER TABLE containers ADD COLUMN project_name TEXT")
         if not _column_exists(conn, "containers", "docker_container_id"):
             conn.execute("ALTER TABLE containers ADD COLUMN docker_container_id TEXT")
         if not _column_exists(conn, "containers", "assigned_user_id"):
             conn.execute("ALTER TABLE containers ADD COLUMN assigned_user_id INTEGER")
         if not _column_exists(conn, "containers", "assigned_volume_name"):
             conn.execute("ALTER TABLE containers ADD COLUMN assigned_volume_name TEXT")
+        if not _column_exists(conn, "containers", "gateway_token"):
+            conn.execute("ALTER TABLE containers ADD COLUMN gateway_token TEXT")
         if not _column_exists(conn, "containers", "last_heartbeat_at"):
             conn.execute("ALTER TABLE containers ADD COLUMN last_heartbeat_at DATETIME")
         if not _column_exists(conn, "containers", "last_used_at"):

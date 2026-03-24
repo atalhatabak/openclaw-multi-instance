@@ -145,7 +145,7 @@ main() {
 
   cd "$TARGET_DIR"
   pull_safely
-  patch_file "$TARGET_FILE"
+  # patch_file "$TARGET_FILE"
 
   log "Tamamlandı."
   log "Kontrol için:"

@@ -7,8 +7,8 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">Admin Panel</p>
-        <h1>Cok kullanicili gateway omurgasi</h1>
-        <p class="muted">Kullanici, volume ve container havuzu ayni panelde gorunur.</p>
+        <h1>Kullaniciya ozel container paneli</h1>
+        <p class="muted">Her kullanici kendi OpenClaw containeri ve volume'u ile kayitlidir.</p>
       </div>
       <nav class="topnav">
         <a class="btn ghost" href="{{ url_for('web.home') }}">Login</a>
@@ -124,7 +124,7 @@
                       <div>{{ user.container_name }}</div>
                       <div class="meta-text">{{ user.container_host }}:{{ user.container_port }} | {{ user.container_status }}</div>
                     {% else %}
-                      <span class="muted">Atama yok</span>
+                      <span class="muted">Container yok</span>
                     {% endif %}
                   </td>
                   <td>{{ user.created_at }}</td>
@@ -149,7 +149,7 @@
       <div class="panel-header compact">
         <div>
           <p class="eyebrow">Container ozeti</p>
-          <h2>Dinamik havuz gorunumu</h2>
+          <h2>Dedicated container listesi</h2>
         </div>
       </div>
       <div class="table-wrap">

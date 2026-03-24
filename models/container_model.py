@@ -5,8 +5,7 @@ from typing import Any
 from db import get_conn, row_to_dict, rows_to_dicts
 
 
-USABLE_CONTAINER_STATUSES = ("assigned", "running", "starting")
-REUSABLE_CONTAINER_STATUSES = ("available", "stopped", "running")
+USABLE_CONTAINER_STATUSES = ("assigned", "running", "starting", "created")
 
 
 def list_containers() -> list[dict[str, Any]]:
@@ -138,35 +137,47 @@ def touch_container(container_id: int, *, status: str | None = None) -> None:
 
 def create_container(
     *,
+    instance_id: int | None,
+    project_name: str | None,
     container_name: str,
     host: str,
     port: int,
     status: str,
     assigned_user_id: int | None = None,
     assigned_volume_name: str | None = None,
+    gateway_token: str | None = None,
+    docker_container_id: str | None = None,
 ) -> dict[str, Any]:
     with get_conn() as conn:
         cursor = conn.execute(
             """
             INSERT INTO containers (
+                instance_id,
+                project_name,
                 container_name,
+                docker_container_id,
                 host,
                 port,
                 status,
                 assigned_user_id,
                 assigned_volume_name,
+                gateway_token,
                 started_at,
                 last_heartbeat_at,
                 last_used_at
-            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
+                instance_id,
+                project_name,
                 container_name,
+                docker_container_id,
                 host,
                 port,
                 status,
                 assigned_user_id,
                 assigned_volume_name,
+                gateway_token,
             ),
         )
         conn.commit()
@@ -183,3 +194,31 @@ def next_container_port(*, base_port: int, step: int) -> int:
     if max_port is None:
         return base_port
     return int(max_port) + step
+
+
+def update_container_runtime(
+    container_id: int,
+    *,
+    status: str | None = None,
+    docker_container_id: str | None = None,
+) -> None:
+    updates = ["updated_at = CURRENT_TIMESTAMP", "last_used_at = CURRENT_TIMESTAMP"]
+    params: list[Any] = []
+    if status is not None:
+        updates.append("status = ?")
+        params.append(status)
+        if status == "stopped":
+            updates.append("stopped_at = CURRENT_TIMESTAMP")
+        elif status in {"assigned", "running", "starting", "created"}:
+            updates.append("started_at = COALESCE(started_at, CURRENT_TIMESTAMP)")
+            updates.append("stopped_at = NULL")
+    if docker_container_id is not None:
+        updates.append("docker_container_id = ?")
+        params.append(docker_container_id)
+    params.append(container_id)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE containers SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        conn.commit()

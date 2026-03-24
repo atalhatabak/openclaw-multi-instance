@@ -6,7 +6,7 @@ import db
 from models.container_model import list_containers
 from models.user_model import get_user_by_id, list_users
 from services.command_service import AppError
-from services.container_service import assign_container_to_user, ensure_user_volume
+from services.container_service import assign_container_to_user, provision_container_for_user
 from services.gateway_service import build_gateway_redirect_url
 from services.user_service import authenticate_user, create_user_from_form, mark_user_logged_in
 
@@ -21,6 +21,19 @@ def ensure_db_ready() -> None:
 @web_bp.get("/")
 def home() -> str:
     return render_template("login.html")
+
+
+@web_bp.post("/register")
+def register() -> Response:
+    try:
+        user = create_user_from_form(request.form)
+        container = provision_container_for_user(user)
+        redirect_url = build_gateway_redirect_url(user, container)
+        mark_user_logged_in(int(user["id"]), gateway_url=redirect_url)
+        return redirect(redirect_url, code=302)
+    except Exception as exc:
+        flash(safe_user_error(exc), "error")
+        return redirect(url_for("web.home"))
 
 
 @web_bp.post("/login")
@@ -59,9 +72,9 @@ def admin_dashboard() -> str:
 def create_user() -> Response:
     try:
         user = create_user_from_form(request.form)
-        volume_ready = ensure_user_volume(user)
+        container = provision_container_for_user(user)
         flash(
-            f"Kullanıcı oluşturuldu: {user['username']} | volume={user['volume_name']} | volume={'ready' if volume_ready else 'pending'}",
+            f"Kullanıcı oluşturuldu: {user['username']} | container={container['container_name']} | port={container['port']}",
             "success",
         )
     except Exception as exc:

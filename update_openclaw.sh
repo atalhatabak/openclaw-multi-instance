@@ -7,6 +7,14 @@ have() { command -v "$1" >/dev/null 2>&1; }
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
+if [[ -f "$ENV_BASE_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_BASE_FILE"
+  set +a
+fi
+
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 
@@ -18,7 +26,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 INSTANCE_ID=""
 TARGET_VERSION=""
 OPENCLAW_BASE_IMAGE=""
-OPENCLAW_IMAGE=""
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-}"
 OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-}"
 
 usage() {
@@ -27,7 +35,8 @@ Usage:
   $0 --instance-id <id> [--version <version>] [--image <image>] [--gateway-bind lan|local]
 
 Notes:
-  - Reads instance data from SQLite (domain, ports, volume, tokens).
+  - Varsayilanlari env.base dosyasindan okur.
+  - Reads instance data from SQLite (domain key, ports, volume, tokens).
   - Recreates containers while preserving the named volume.
 EOF
 }
@@ -113,7 +122,9 @@ if [[ -z "$OPENCLAW_BASE_IMAGE" ]]; then
   OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:${TARGET_VERSION}"
 fi
 
-OPENCLAW_IMAGE="atalhatabak/openclaw-extras:$(tagify "$TARGET_VERSION")"
+if [[ -z "$OPENCLAW_IMAGE" ]]; then
+  OPENCLAW_IMAGE="atalhatabak/openclaw-extras:$(tagify "$TARGET_VERSION")"
+fi
 
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.update.XXXXXX")"
 cleanup() { rm -f "$env_file" || true; }
@@ -142,7 +153,7 @@ echo "Pulling base image (best effort): $OPENCLAW_BASE_IMAGE"
 docker pull "$OPENCLAW_BASE_IMAGE" >/dev/null 2>&1 || true
 
 echo "Rebuilding custom image (best effort)"
-DOCKER_BUILDKIT=1 docker build -f "$ROOT_DIR/dockerfile" --build-arg "OPENCLAW_BASE_IMAGE=$OPENCLAW_BASE_IMAGE" -t "$OPENCLAW_IMAGE" . >/dev/null
+DOCKER_BUILDKIT=1 docker build -f "$ROOT_DIR/Dockerfile" --build-arg "OPENCLAW_BASE_IMAGE=$OPENCLAW_BASE_IMAGE" -t "$OPENCLAW_IMAGE" "$ROOT_DIR" >/dev/null
 
 echo "Stopping old services (preserve volume)"
 "${compose_cmd[@]}" down --remove-orphans || true
