@@ -7,6 +7,14 @@ have() { command -v "$1" >/dev/null 2>&1; }
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
+if [[ -f "$ENV_BASE_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_BASE_FILE"
+  set +a
+fi
+
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 
@@ -16,16 +24,19 @@ LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_update.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 INSTANCE_ID=""
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}"
-OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
+TARGET_VERSION=""
+OPENCLAW_BASE_IMAGE=""
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-}"
+OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-}"
 
 usage() {
   cat <<EOF
 Usage:
-  $0 --instance-id <id> [--image <image>] [--gateway-bind lan|local]
+  $0 --instance-id <id> [--version <version>] [--image <image>] [--gateway-bind lan|local]
 
 Notes:
-  - Reads instance data from SQLite (domain, ports, volume, tokens).
+  - Varsayilanlari env.base dosyasindan okur.
+  - Reads instance data from SQLite (domain key, ports, volume, tokens).
   - Recreates containers while preserving the named volume.
 EOF
 }
@@ -37,7 +48,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --image)
-      OPENCLAW_IMAGE="$2"
+      OPENCLAW_BASE_IMAGE="$2"
+      shift 2
+      ;;
+    --version)
+      TARGET_VERSION="$2"
       shift 2
       ;;
     --gateway-bind)
@@ -76,6 +91,8 @@ gateway_token="$(getj token)"
 openrouter_token="$(getj openrouter_token)"
 telegram_bot_token="$(getj channel_bot_token)"
 telegram_allow_from="$(getj allow_from)"
+current_version="$(getj version)"
+stored_gateway_bind="$(getj gateway_bind)"
 
 [[ -n "$project_name" ]] || fail "project_name missing in DB for instance $INSTANCE_ID"
 [[ -n "$volume_name" ]] || fail "volume_name missing in DB for instance $INSTANCE_ID"
@@ -83,6 +100,31 @@ telegram_allow_from="$(getj allow_from)"
 [[ -n "$bridge_port" ]] || fail "bridge_port missing in DB for instance $INSTANCE_ID"
 [[ -n "$gateway_token" ]] || fail "token missing in DB for instance $INSTANCE_ID"
 [[ -n "$openrouter_token" ]] || fail "openrouter_token missing in DB for instance $INSTANCE_ID"
+
+tagify() {
+  echo "${1:-latest}" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9_.-]/-/g' \
+    | sed 's/-\+/-/g' \
+    | sed 's/^-//' \
+    | sed 's/-$//'
+}
+
+if [[ -z "$TARGET_VERSION" ]]; then
+  TARGET_VERSION="latest"
+fi
+
+if [[ -z "$OPENCLAW_GATEWAY_BIND" ]]; then
+  OPENCLAW_GATEWAY_BIND="${stored_gateway_bind:-lan}"
+fi
+
+if [[ -z "$OPENCLAW_BASE_IMAGE" ]]; then
+  OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:${TARGET_VERSION}"
+fi
+
+if [[ -z "$OPENCLAW_IMAGE" ]]; then
+  OPENCLAW_IMAGE="atalhatabak/openclaw-extras:$(tagify "$TARGET_VERSION")"
+fi
 
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.update.XXXXXX")"
 cleanup() { rm -f "$env_file" || true; }
@@ -107,11 +149,11 @@ fi
 
 compose_cmd=(docker compose -p "$project_name" --env-file "$env_file")
 
-echo "Pulling base image (best effort): $OPENCLAW_IMAGE"
-docker pull "$OPENCLAW_IMAGE" >/dev/null 2>&1 || true
+echo "Pulling base image (best effort): $OPENCLAW_BASE_IMAGE"
+docker pull "$OPENCLAW_BASE_IMAGE" >/dev/null 2>&1 || true
 
 echo "Rebuilding custom image (best effort)"
-DOCKER_BUILDKIT=1 docker build -t atalhatabak/openclaw-extras:latest . >/dev/null
+DOCKER_BUILDKIT=1 docker build -f "$ROOT_DIR/Dockerfile" --build-arg "OPENCLAW_BASE_IMAGE=$OPENCLAW_BASE_IMAGE" -t "$OPENCLAW_IMAGE" "$ROOT_DIR" >/dev/null
 
 echo "Stopping old services (preserve volume)"
 "${compose_cmd[@]}" down --remove-orphans || true
@@ -119,9 +161,18 @@ echo "Stopping old services (preserve volume)"
 echo "Starting updated services"
 "${compose_cmd[@]}" up -d --remove-orphans
 
+effective_version="$(docker run --rm "$OPENCLAW_IMAGE" openclaw --version 2>/dev/null | head -n 1 | tr -d '\r')"
+if [[ -z "$effective_version" ]]; then
+  effective_version="${TARGET_VERSION:-$current_version}"
+fi
+
+python3 "$PY_DB_SCRIPT" --db "$DB_PATH" update_runtime \
+  --id "$INSTANCE_ID" \
+  --version "$effective_version" \
+  --image "$OPENCLAW_IMAGE" >/dev/null
+
 echo "Update completed"
 echo "  project : $project_name"
 echo "  volume  : $volume_name"
 echo "  ports   : $gateway_port, $bridge_port"
 echo "  Web Dashboard UI : http://127.0.0.1:$gateway_port/#token=$gateway_token"
-

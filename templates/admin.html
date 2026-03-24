@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Admin | OpenClaw{% endblock %}
+
+{% block body %}
+  <main class="admin-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Admin Panel</p>
+        <h1>Kullaniciya ozel container paneli</h1>
+        <p class="muted">Her kullanici kendi OpenClaw containeri ve volume'u ile kayitlidir.</p>
+      </div>
+      <nav class="topnav">
+        <a class="btn ghost" href="{{ url_for('web.home') }}">Login</a>
+        <a class="btn ghost" href="{{ url_for('web.containers_page') }}">Container listesi</a>
+      </nav>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <section class="stats-grid">
+      <article class="stat-card">
+        <span>Toplam kullanici</span>
+        <strong>{{ stats.user_count }}</strong>
+      </article>
+      <article class="stat-card">
+        <span>Aktif kullanici</span>
+        <strong>{{ stats.active_users }}</strong>
+      </article>
+      <article class="stat-card">
+        <span>Container</span>
+        <strong>{{ stats.container_count }}</strong>
+      </article>
+      <article class="stat-card">
+        <span>Dolu container</span>
+        <strong>{{ stats.busy_containers }}</strong>
+      </article>
+    </section>
+
+    <section class="panel split-panel">
+      <div class="panel-section">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Yeni kullanici</p>
+            <h2>Kayit olustur</h2>
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('web.create_user') }}" class="form-grid">
+          <label class="field">
+            <span>Username</span>
+            <input type="text" name="username" placeholder="username" required>
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" name="password" placeholder="Login sifresi" required>
+          </label>
+          <label class="field field-wide">
+            <span>OpenRouter API Key</span>
+            <input type="password" name="openrouter_api_key" placeholder="or-v1-..." required>
+          </label>
+          <label class="field field-wide">
+            <span>OpenRouter API Key 2 (opsiyonel)</span>
+            <input type="password" name="openrouter_api_key2" placeholder="Ileride yedek veya farkli kullanim icin">
+          </label>
+          <button class="btn primary" type="submit">Kullanici olustur</button>
+        </form>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Kullanici listesi</p>
+            <h2>Gateway ve container durumu</h2>
+          </div>
+          <input id="userSearch" class="search-input" type="search" placeholder="username / volume / container ara">
+        </div>
+
+        <div class="table-wrap">
+          <table class="table" id="userTable">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Volume</th>
+                <th>Gateway</th>
+                <th>Durum</th>
+                <th>Container</th>
+                <th>Olusturulma</th>
+                <th>Islem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+                <tr data-user-row>
+                  <td>{{ user.username }}</td>
+                  <td>{{ user.volume_name }}</td>
+                  <td class="mono">
+                    <div>token={{ user.gateway_token }}</div>
+                    <div class="meta-text">
+                      {% if user.gateway_url %}
+                        {{ user.gateway_url }}
+                      {% else %}
+                        redirect url login sonrasi olusur
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td>
+                    <span class="badge {{ 'ok' if user.is_active else 'warn' }}">
+                      {{ 'active' if user.is_active else 'inactive' }}
+                    </span>
+                    <div class="meta-text">
+                      volume {{ 'ready' if user.volume_prepared_at else 'pending' }}
+                    </div>
+                  </td>
+                  <td>
+                    {% if user.container_name %}
+                      <div>{{ user.container_name }}</div>
+                      <div class="meta-text">{{ user.container_host }}:{{ user.container_port }} | {{ user.container_status }}</div>
+                    {% else %}
+                      <span class="muted">Container yok</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ user.created_at }}</td>
+                  <td>
+                    <form method="post" action="{{ url_for('web.launch_user_session', user_id=user.id) }}">
+                      <button class="btn secondary" type="submit">Login ol</button>
+                    </form>
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="7" class="muted empty-cell">Henuz kullanici yok.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Container ozeti</p>
+          <h2>Dedicated container listesi</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Host</th>
+              <th>Port</th>
+              <th>Assigned user</th>
+              <th>Assigned volume</th>
+              <th>Last used</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for container in containers %}
+              <tr>
+                <td>{{ container.container_name }}</td>
+                <td><span class="badge">{{ container.status }}</span></td>
+                <td>{{ container.host }}</td>
+                <td>{{ container.port }}</td>
+                <td>{{ container.assigned_username or '-' }}</td>
+                <td>{{ container.assigned_volume_name or '-' }}</td>
+                <td>{{ container.last_used_at or container.last_heartbeat_at or '-' }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="7" class="muted empty-cell">Henuz container kaydi yok.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+{% endblock %}

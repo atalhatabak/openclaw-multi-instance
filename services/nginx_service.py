@@ -18,23 +18,25 @@ class DomainResolution:
 
 
 def resolve_domain(input_value: str) -> DomainResolution:
-    raw = (input_value or "").strip().lower()
+    raw = (input_value or "").strip().lower().rstrip(".")
     if not raw:
         raise ValueError("Domain/subdomain is required.")
 
-    # If user enters a full domain (has a dot), keep as-is.
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*", raw):
+        raise ValueError("Invalid domain/subdomain format.")
+
     if "." in raw:
         return DomainResolution(domain_short=raw.split(".")[0], domain_full=raw)
     return DomainResolution(domain_short=raw, domain_full=f"{raw}.{BASE_DOMAIN}")
 
 
 def _safe_server_name(domain_full: str) -> str:
-    # Conservative allowlist.
-    if not re.fullmatch(r"[a-z0-9.-]+", domain_full):
-        raise ValueError("Invalid domain characters.")
-    if domain_full.startswith("-") or domain_full.endswith("-"):
+    normalized = domain_full.strip().lower().rstrip(".")
+    if not normalized:
         raise ValueError("Invalid domain format.")
-    return domain_full
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*", normalized):
+        raise ValueError("Invalid domain format.")
+    return normalized
 
 
 def generate_vhost_config(*, domain_full: str, gateway_port: int) -> Path:
@@ -57,4 +59,3 @@ def generate_vhost_config(*, domain_full: str, gateway_port: int) -> Path:
 """
     out_path.write_text(content, encoding="utf-8")
     return out_path
-

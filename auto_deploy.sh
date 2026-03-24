@@ -11,19 +11,19 @@ set -e
 # bot2.mebsclaw.com
 # ...
 
-BASE_NAME="bot"
+BASE_NAME="v"
 set -a
 source env.base
 set +a
 
-COUNT="${1:-100}"
+COUNT="${4:-10}"
 
-if [[ -z "$BASE_NAME" || -z "$OPENROUTER_KEY" ]]; then
+if [[ -z "$BASE_NAME" || -z "$OPENROUTER_API_KEY" ]]; then
   echo "Usage: $0 BASE_NAME OPENROUTER_KEY [COUNT]"
   exit 1
 fi
 
-for i in $(seq 1 "$COUNT"); do
+for i in $(seq 4 "$COUNT"); do
   DOMAIN="${BASE_NAME}${i}"
 
   echo "--------------------------------------"
@@ -32,7 +32,7 @@ for i in $(seq 1 "$COUNT"); do
 
   ./deploy_openclaw.sh \
     --domain "$DOMAIN" \
-    --openrouter-api-key "$OPENROUTER_KEY"
+    --openrouter-api-key "$OPENROUTER_API_KEY"
 
 done
 

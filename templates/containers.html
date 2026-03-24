@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Containers | OpenClaw{% endblock %}
+
+{% block body %}
+  <main class="admin-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Container Pool</p>
+        <h1>Havuz izleme ekrani</h1>
+      </div>
+      <nav class="topnav">
+        <a class="btn ghost" href="{{ url_for('web.admin_dashboard') }}">Admin panel</a>
+        <a class="btn ghost" href="{{ url_for('web.home') }}">Login</a>
+      </nav>
+    </header>
+
+    <section class="panel">
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Container listesi</p>
+          <h2>Operasyonel gorunurluk</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Container</th>
+              <th>Status</th>
+              <th>Host</th>
+              <th>Port</th>
+              <th>User</th>
+              <th>Volume</th>
+              <th>Heartbeat</th>
+              <th>Started</th>
+              <th>Stopped</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for container in containers %}
+              <tr>
+                <td>{{ container.container_name }}</td>
+                <td><span class="badge">{{ container.status }}</span></td>
+                <td>{{ container.host }}</td>
+                <td>{{ container.port }}</td>
+                <td>{{ container.assigned_username or '-' }}</td>
+                <td>{{ container.assigned_volume_name or '-' }}</td>
+                <td>{{ container.last_heartbeat_at or '-' }}</td>
+                <td>{{ container.started_at or '-' }}</td>
+                <td>{{ container.stopped_at or '-' }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="9" class="muted empty-cell">Henuz container kaydi yok.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+{% endblock %}

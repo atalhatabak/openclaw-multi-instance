@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS instances (
     gateway_port INTEGER NOT NULL UNIQUE,
     bridge_port INTEGER NOT NULL UNIQUE,
     version TEXT NOT NULL,
+    gateway_bind TEXT NOT NULL DEFAULT 'lan',
     channel_choice TEXT NOT NULL DEFAULT 'telegram',
     channel_bot_token TEXT,
     allow_from TEXT,
@@ -49,16 +50,21 @@ CREATE INDEX IF NOT EXISTS idx_logs_created_at ON operation_logs(created_at);
 SELECT_FIELDS = """
 id,
 domain,
+domain_short,
 project_name,
 volume_name,
 gateway_port,
 bridge_port,
 version,
+gateway_bind,
 channel_choice,
 channel_bot_token,
 allow_from,
 token,
 openrouter_token,
+image,
+current_image_id,
+last_update_check_at,
 created_at
 """
 
@@ -78,10 +84,25 @@ def get_conn(db_path: str) -> sqlite3.Connection:
     return conn
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == column for r in rows)
+
+
 def init_db(db_path: str) -> None:
     conn = get_conn(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
+        if not _column_exists(conn, "instances", "domain_short"):
+            conn.execute("ALTER TABLE instances ADD COLUMN domain_short TEXT")
+        if not _column_exists(conn, "instances", "image"):
+            conn.execute("ALTER TABLE instances ADD COLUMN image TEXT")
+        if not _column_exists(conn, "instances", "current_image_id"):
+            conn.execute("ALTER TABLE instances ADD COLUMN current_image_id TEXT")
+        if not _column_exists(conn, "instances", "last_update_check_at"):
+            conn.execute("ALTER TABLE instances ADD COLUMN last_update_check_at DATETIME")
+        if not _column_exists(conn, "instances", "gateway_bind"):
+            conn.execute("ALTER TABLE instances ADD COLUMN gateway_bind TEXT NOT NULL DEFAULT 'lan'")
         conn.commit()
     finally:
         conn.close()
@@ -119,30 +140,36 @@ def cmd_add(args: argparse.Namespace) -> None:
             """
             INSERT INTO instances (
                 domain,
+                domain_short,
                 project_name,
                 volume_name,
                 gateway_port,
                 bridge_port,
                 version,
+                gateway_bind,
                 channel_choice,
                 channel_bot_token,
                 allow_from,
                 token,
-                openrouter_token
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                openrouter_token,
+                image
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 args.domain,
+                args.domain_short,
                 args.project_name,
                 args.volume_name,
                 args.gateway_port,
                 args.bridge_port,
                 args.version,
+                args.gateway_bind,
                 args.channel_choice,
                 args.channel_bot_token,
                 args.allow_from,
                 args.token,
                 args.openrouter_token,
+                args.image,
             ),
         )
         conn.commit()
@@ -228,6 +255,29 @@ def cmd_available_port(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_update_runtime(args: argparse.Namespace) -> None:
+    conn = get_conn(args.db)
+    try:
+        row = get_instance(conn, args.id, None)
+        if row is None:
+            fail("instance not found", 2)
+
+        conn.execute(
+            """
+            UPDATE instances
+            SET version = ?, image = ?, last_update_check_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (args.version, args.image, args.id),
+        )
+        conn.commit()
+
+        updated = get_instance(conn, args.id, None)
+        ok({"status": "ok", "instance": row_to_dict(updated)})
+    finally:
+        conn.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OpenClaw instance database manager")
     parser.add_argument("--db", default=DEFAULT_DB_PATH, help="SQLite db path")
@@ -239,16 +289,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("add")
     p.add_argument("--domain", required=True)
+    p.add_argument("--domain-short", dest="domain_short", default="")
     p.add_argument("--project-name", dest="project_name", required=True)
     p.add_argument("--volume-name", dest="volume_name", required=True)
     p.add_argument("--gateway-port", dest="gateway_port", required=True, type=int)
     p.add_argument("--bridge-port", dest="bridge_port", required=True, type=int)
     p.add_argument("--version", required=True)
+    p.add_argument("--gateway-bind", dest="gateway_bind", default="lan")
     p.add_argument("--channel-choice", dest="channel_choice", default="telegram")
     p.add_argument("--channel-bot-token", dest="channel_bot_token", default="")
     p.add_argument("--allow-from", dest="allow_from", default="")
     p.add_argument("--token", required=True)
     p.add_argument("--openrouter-token", dest="openrouter_token", required=True)
+    p.add_argument("--image", default="")
     p.set_defaults(func=cmd_add)
 
     p = sub.add_parser("list")
@@ -268,6 +321,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--base-gateway", type=int, default=20000)
     p.add_argument("--step", type=int, default=2)
     p.set_defaults(func=cmd_available_port)
+
+    p = sub.add_parser("update_runtime")
+    p.add_argument("--id", required=True, type=int)
+    p.add_argument("--version", required=True)
+    p.add_argument("--image", required=True)
+    p.set_defaults(func=cmd_update_runtime)
 
     return parser
 
