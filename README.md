@@ -4,6 +4,10 @@ Tek bir sunucu üzerinde birden fazla OpenClaw oturumu oluşturmak, bunları kul
 
 Bu proje, OpenClaw container kurulumunu arka planda otomatikleştirir. Admin paneli üzerinden kullanıcı oluşturulduğunda ilgili container hazırlanır, gerekli volume ve port eşleşmeleri tanımlanır, ardından kullanıcı kendi oturumuna yönlendirilir.
 
+![download (1)](https://github.com/user-attachments/assets/d662d965-391b-436c-a2e8-50408b5c9717)
+
+
+
 ## Ne İşe Yarar?
 
 - Birden fazla OpenClaw instance'ını aynı makinede çalıştırmayı kolaylaştırır
