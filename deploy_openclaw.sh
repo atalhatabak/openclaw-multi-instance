@@ -32,7 +32,7 @@ TELEGRAM_ALLOW_FROM="${TELEGRAM_ALLOW_FROM:-}"
 OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
 OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-claw}"
 OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xen-openclaw}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xen-openclaw:latest}"
 CHANNEL_CHOICE="web"
 
 usage() {
@@ -247,7 +247,7 @@ compose_cmd_tools=(docker compose -p "$project_name" --env-file "$env_file" --pr
   /usr/local/bin/openclaw onboard --non-interactive --accept-risk --openrouter-api-key $OPENROUTER_API_KEY
 
   echo 'Model, browser channels config'
-  /usr/local/bin/openclaw models set openrouter/stepfun/step-3.5-flash:free
+  /usr/local/bin/openclaw models set openrouter/xiaomi/mimo-v2-pro
   /usr/local/bin/openclaw config set browser.enabled true
   /usr/local/bin/openclaw config set browser.executablePath /home/node/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome
   /usr/local/bin/openclaw config set browser.headless true
@@ -262,8 +262,7 @@ compose_cmd_tools=(docker compose -p "$project_name" --env-file "$env_file" --pr
     /usr/local/bin/openclaw config set channels.telegram.groupAllowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
     /usr/local/bin/openclaw config set channels.telegram.groupPolicy allowlist
     /usr/local/bin/openclaw config set channels.telegram.streaming partial
-  else
-    /usr/local/bin/openclaw config set channels.telegram.enabled false || true
+
   fi
 
   echo 'probably all done'

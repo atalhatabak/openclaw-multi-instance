@@ -66,9 +66,11 @@ COPY --from=ext-deps /out/ ./extensions/
 # Reduce OOM risk on low-memory hosts during dependency installation.
 # Docker builds on small VMs may otherwise fail with "Killed" (exit 137).
 RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \
-    NODE_OPTIONS=--max-old-space-size=2048 pnpm install --frozen-lockfile
+    NODE_OPTIONS=--max-old-space-size=4096 pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
+
+RUN pnpm rebuild -r
 
 # Normalize extension paths now so runtime COPY preserves safe modes
 # without adding a second full extensions layer.
@@ -224,10 +226,13 @@ RUN npm install -g clawhub && \
     npm cache clean --force
 
 # # Install Homebrew 
-# RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
-#     echo >> /home/node/.bashrc; \
-#     echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"' >> /home/node/.bashrc; \
-#     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)";
+ RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
+     echo >> /home/node/.bashrc; \
+     echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"' >> /home/node/.bashrc; \
+     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"; \
+     chown node -R /home/linuxbrew/; \
+     chown -R node /home/node/.cache/;
+
 
 
 # ENV PATH="/home/node/homebrew/bin:${PATH}"

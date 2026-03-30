@@ -6,7 +6,7 @@ TARGET_DIR="openclaw"
 TARGET_FILE="ui/src/ui/storage.ts"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xen-openclaw}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv2-openclaw}"
 
 log() {
   printf '[INFO] %s\n' "$1"
