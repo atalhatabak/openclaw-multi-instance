@@ -2,11 +2,23 @@
 set -Eeuo pipefail
 
 REPO_URL="https://github.com/openclaw/openclaw.git"
+
+# ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
+# if [[ -f "$ENV_BASE_FILE" ]]; then
+#   set -a
+#   # shellcheck disable=SC1090
+#   source "$ENV_BASE_FILE"
+#   set +a
+# fi
+
+
 TARGET_DIR="openclaw"
 TARGET_FILE="ui/src/ui/storage.ts"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv2-openclaw}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGEnn:-xenv1-openclaw}"
+OVERLAY_SOURCE_DIR="$ROOT_DIR/scripts/docker"
+OVERLAY_TARGET_DIR="$ROOT_DIR/$TARGET_DIR/scripts/docker"
 
 log() {
   printf '[INFO] %s\n' "$1"
@@ -30,6 +42,21 @@ require_cmd() {
 require_cmd git
 require_cmd python3
 require_cmd docker
+
+sync_overlay_files() {
+  if [ ! -d "$OVERLAY_SOURCE_DIR" ]; then
+    err "Overlay klasoru bulunamadi: $OVERLAY_SOURCE_DIR"
+    exit 1
+  fi
+
+  mkdir -p "$OVERLAY_TARGET_DIR"
+
+  cp "$OVERLAY_SOURCE_DIR/build-image-template.sh" "$OVERLAY_TARGET_DIR/build-image-template.sh"
+  cp "$OVERLAY_SOURCE_DIR/init-image-home.sh" "$OVERLAY_TARGET_DIR/init-image-home.sh"
+  chmod 755 "$OVERLAY_TARGET_DIR/build-image-template.sh" "$OVERLAY_TARGET_DIR/init-image-home.sh"
+
+  log "Docker helper scriptleri sync edildi: $OVERLAY_TARGET_DIR"
+}
 
 clone_if_needed() {
   if [ -d "$TARGET_DIR/.git" ]; then
@@ -246,12 +273,16 @@ build_image() {
     "$source_dir"
 }
 
+
 main() {
   clone_if_needed
 
   cd "$TARGET_DIR"
   pull_safely
   patch_file "$TARGET_FILE"
+  cd "$ROOT_DIR"
+  sync_overlay_files
+  cd "$TARGET_DIR"
   build_image "$PWD"
 
   log "Tamamlandı."

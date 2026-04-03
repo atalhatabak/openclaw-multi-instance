@@ -196,6 +196,7 @@ OPENCLAW_BRIDGE_PORT=$bridge_port
 OPENCLAW_GATEWAY_BIND=$OPENCLAW_GATEWAY_BIND
 OPENCLAW_IMAGE=$OPENCLAW_IMAGE
 OPENROUTER_API_KEY=$OPENROUTER_API_KEY
+DOMAIN=$DOMAIN
 EOF
 
 if [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_ALLOW_FROM" ]]; then
@@ -230,47 +231,32 @@ docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || {
 echo "Volume ready: $OPENCLAW_HOME_VOLUME"
 
 compose_cmd=(docker compose -p "$project_name" --env-file "$env_file")
-compose_cmd_tools=(docker compose -p "$project_name" --env-file "$env_file" --profile tools)
 
-"${compose_cmd_tools[@]}" run --rm --user root --entrypoint sh openclaw-cli -c \
+"${compose_cmd[@]}" run --rm --no-deps --user root --entrypoint sh openclaw-gateway -c \
   'find /home/node/.openclaw -xdev -exec chown node:node {} +; \
    [ -d /home/node/.openclaw/workspace/.openclaw ] && chown -R node:node /home/node/.openclaw/workspace/.openclaw || true'
-
-"${compose_cmd_tools[@]}" run --rm --entrypoint sh openclaw-cli -c "
-  echo 'config setting: gateway mode/bind/allowed-origins'
-  /usr/local/bin/openclaw config set gateway.mode local
-  /usr/local/bin/openclaw config set gateway.bind $OPENCLAW_GATEWAY_BIND
-  /usr/local/bin/openclaw config set gateway.controlUi.allowedOrigins '[\"https://$DOMAIN\"]' --strict-json
-
-  echo 'Profile change with coding, Onboard starting'
-  /usr/local/bin/openclaw config set tools.profile coding
-  /usr/local/bin/openclaw onboard --non-interactive --accept-risk --openrouter-api-key $OPENROUTER_API_KEY
-
-  echo 'Model, browser channels config'
-  /usr/local/bin/openclaw models set openrouter/xiaomi/mimo-v2-pro
-  /usr/local/bin/openclaw config set browser.enabled true
-  /usr/local/bin/openclaw config set browser.executablePath /home/node/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome
-  /usr/local/bin/openclaw config set browser.headless true
-  /usr/local/bin/openclaw config set browser.noSandbox true
-  /usr/local/bin/openclaw config set browser.defaultProfile openclaw
-
-  if [ -n \"${TELEGRAM_BOT_TOKEN:-}\" ] && [ -n \"${TELEGRAM_ALLOW_FROM:-}\" ]; then
-    /usr/local/bin/openclaw config set channels.telegram.enabled true
-    /usr/local/bin/openclaw config set channels.telegram.botToken $TELEGRAM_BOT_TOKEN
-    /usr/local/bin/openclaw config set channels.telegram.dmPolicy allowlist
-    /usr/local/bin/openclaw config set channels.telegram.allowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
-    /usr/local/bin/openclaw config set channels.telegram.groupAllowFrom [\"$TELEGRAM_ALLOW_FROM\"] --strict-json
-    /usr/local/bin/openclaw config set channels.telegram.groupPolicy allowlist
-    /usr/local/bin/openclaw config set channels.telegram.streaming partial
-
-  fi
-
-  echo 'probably all done'
-"
 
 echo "Starting services"
 "${compose_cmd[@]}" up -d
 compose_started=1
+
+# echo "browser starting"
+
+# gateway_container_name=""
+# for _ in {1..20}; do
+#   gateway_container_name="$(docker ps \
+#     --filter "label=com.docker.compose.project=$project_name" \
+#     --filter "label=com.docker.compose.service=openclaw-gateway" \
+#     --format '{{.Names}}' | head -n 1)"
+#   if [[ -n "$gateway_container_name" ]]; then
+#     break
+#   fi
+#   sleep 1
+# done
+# echo $gateway_container_name
+# [[ -n "$gateway_container_name" ]] || fail "openclaw-gateway container name bulunamadi"
+
+# docker exec -i "$gateway_container_name" openclaw browser start
 
 python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
   --domain "$instance_key" \

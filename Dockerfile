@@ -70,7 +70,7 @@ RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/sto
 
 COPY . .
 
-RUN pnpm rebuild -r
+# RUN pnpm rebuild -r
 
 # Normalize extension paths now so runtime COPY preserves safe modes
 # without adding a second full extensions layer.
@@ -226,20 +226,28 @@ RUN npm install -g clawhub && \
     npm cache clean --force
 
 # # Install Homebrew 
- RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
-     echo >> /home/node/.bashrc; \
-     echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"' >> /home/node/.bashrc; \
-     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"; \
-     chown node -R /home/linuxbrew/; \
-     chown -R node /home/node/.cache/;
+# root aşaması
+RUN mkdir -p /home/linuxbrew/.linuxbrew /home/node/.cache && \
+    chown -R node:node /home/linuxbrew /home/node/.cache
 
+# Homebrew install: node olarak
+RUN su node -s /bin/bash -c 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
 
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 
-# ENV PATH="/home/node/homebrew/bin:${PATH}"
+RUN echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/node/.bashrc
 
 # Expose the CLI binary without requiring npm global writes as non-root.
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
  && chmod 755 /app/openclaw.mjs
+
+COPY --from=runtime-assets --chown=node:node /app/scripts/docker/init-image-home.sh /usr/local/bin/openclaw-init-entrypoint.sh
+COPY --from=runtime-assets --chown=node:node /app/scripts/docker/build-image-template.sh /usr/local/bin/openclaw-build-template.sh
+
+RUN chmod 755 /usr/local/bin/openclaw-init-entrypoint.sh && \
+    chmod 755 /usr/local/bin/openclaw-build-template.sh && \
+    install -d -o node -g node /opt/openclaw-home-template && \
+    su node -s /bin/sh -c /usr/local/bin/openclaw-build-template.sh
 
 ENV NODE_ENV=production
 
@@ -247,6 +255,8 @@ ENV NODE_ENV=production
 # The node:24-bookworm image includes a 'node' user (uid 1000)
 # This reduces the attack surface by preventing container escape via root privileges
 USER node
+
+ENTRYPOINT ["/usr/local/bin/openclaw-init-entrypoint.sh"]
 
 # Start gateway server with default config.
 # Binds to loopback (127.0.0.1) by default for security.
