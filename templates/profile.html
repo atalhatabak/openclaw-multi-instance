@@ -6,15 +6,15 @@
   <main class="admin-shell profile-shell" data-launch-gateway="{{ '1' if launch_gateway else '0' }}" data-approve-url="{{ url_for('web.approve_latest_pairing') }}">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Kullanici Profili</p>
-        <h1>{{ user.username }} icin kontrol merkezi</h1>
-        <p class="muted">Hesap bilgilerini yonetin, gateway oturumunu acin ve cihaz onayini tek yerden takip edin.</p>
+        <p class="eyebrow">Profil</p>
+        <h1>{{ user.username }}</h1>
+        <p class="muted">Hesap, gateway ve cihaz onayi.</p>
       </div>
       <nav class="topnav">
         {% if gateway_url %}
-          <a class="btn secondary" href="{{ gateway_url }}" target="_blank" rel="noopener">Dashboard ac</a>
+          <a class="btn secondary" href="{{ gateway_url }}" target="_blank" rel="noopener">Dashboard</a>
         {% endif %}
-        <a class="btn ghost" href="{{ url_for('web.home') }}">Login sayfasi</a>
+        <a class="btn ghost" href="{{ url_for('web.login_page') }}">Giris</a>
       </nav>
     </header>
 
@@ -51,8 +51,8 @@
       <div class="panel-section">
         <div class="panel-header compact">
           <div>
-            <p class="eyebrow">Hesap Ayarlari</p>
-            <h2>Parola ve API anahtarlari</h2>
+            <p class="eyebrow">Hesap</p>
+            <h2>Parola ve anahtarlar</h2>
           </div>
         </div>
         <form method="post" action="{{ url_for('web.update_account') }}" class="form-grid">
@@ -62,17 +62,13 @@
           </label>
           <label class="field">
             <span>Yeni Password</span>
-            <input type="password" name="password" placeholder="Bos birakirsan degismez">
+            <input type="password" name="password" placeholder="Bos birak">
           </label>
           <label class="field field-wide">
             <span>OpenRouter API Key</span>
-            <input type="password" name="openrouter_api_key" placeholder="Bos birakirsan mevcut deger korunur">
+            <input type="password" name="openrouter_api_key" placeholder="Mevcut degeri koru">
           </label>
-          <label class="field field-wide">
-            <span>OpenRouter API Key 2</span>
-            <input type="password" name="openrouter_api_key2" placeholder="Bos birakirsan mevcut deger korunur">
-          </label>
-          <button class="btn primary" type="submit">Hesap bilgilerini guncelle</button>
+          <button class="btn primary" type="submit">Guncelle</button>
         </form>
       </div>
 
@@ -80,12 +76,8 @@
         <div class="panel-header compact">
           <div>
             <p class="eyebrow">Gateway</p>
-            <h2>Oturum ve cihaz islemleri</h2>
+            <h2>Oturum ve cihaz</h2>
           </div>
-        </div>
-
-        <div class="hero-note profile-note">
-          Profil sayfasi acildiginda son pairing istegi sessizce onaylanir. Bekleyen cihaz yoksa herhangi bir hata gosterilmez.
         </div>
 
         <div class="form-grid">
@@ -97,7 +89,7 @@
             <span>Container</span>
             <input type="text" value="{{ container.container_name if container else '' }}" readonly>
           </div>
-          <button class="btn ghost" type="button" id="approveLatestButton">Son cihaz istegini sessizce onayla</button>
+          <button class="btn ghost" type="button" id="approveLatestButton">Son istegi onayla</button>
         </div>
       </div>
     </section>

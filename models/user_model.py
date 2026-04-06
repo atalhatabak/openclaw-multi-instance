@@ -8,7 +8,10 @@ from db import get_conn, row_to_dict, rows_to_dicts
 
 def create_user(
     *,
+    full_name: str | None = None,
     username: str,
+    email: str | None = None,
+    phone: str | None = None,
     password_hash: str,
     openrouter_api_key: str,
     volume_name: str,
@@ -20,17 +23,23 @@ def create_user(
         cursor = conn.execute(
             """
             INSERT INTO users (
+                full_name,
                 username,
+                email,
+                phone,
                 password_hash,
                 openrouter_api_key,
                 openrouter_api_key2,
                 volume_name,
                 gateway_token,
                 gateway_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                full_name,
                 username,
+                email,
+                phone,
                 password_hash,
                 openrouter_api_key,
                 openrouter_api_key2,
@@ -71,7 +80,9 @@ def list_users() -> list[dict[str, Any]]:
                 c.container_name,
                 c.host AS container_host,
                 c.port AS container_port,
-                c.status AS container_status
+                c.status AS container_status,
+                c.image_ref AS container_image_ref,
+                c.image_version AS container_image_version
             FROM users u
             LEFT JOIN containers c ON c.assigned_user_id = u.id
             ORDER BY u.created_at DESC, u.id DESC
@@ -133,7 +144,6 @@ def update_user_account(
     *,
     password_hash: str | None = None,
     openrouter_api_key: str | None = None,
-    openrouter_api_key2: str | None = None,
 ) -> None:
     updates: list[str] = ["updated_at = CURRENT_TIMESTAMP"]
     params: list[Any] = []
@@ -143,9 +153,6 @@ def update_user_account(
     if openrouter_api_key is not None:
         updates.append("openrouter_api_key = ?")
         params.append(openrouter_api_key)
-    if openrouter_api_key2 is not None:
-        updates.append("openrouter_api_key2 = ?")
-        params.append(openrouter_api_key2)
     params.append(user_id)
     with get_conn() as conn:
         conn.execute(

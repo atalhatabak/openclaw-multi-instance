@@ -7,6 +7,8 @@ from typing import Any, Iterable, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("OPENCLAW_DB_PATH", BASE_DIR / "openclaw_instances.db"))
+DEFAULT_CURRENT_IMAGE_REF = os.environ.get("OPENCLAW_IMAGE", "xenv1-openclaw:latest")
+DEFAULT_CURRENT_IMAGE_VERSION = os.environ.get("OPENCLAW_CURRENT_IMAGE_VERSION", "2026.4.3")
 
 
 SCHEMA_SQL = """
@@ -33,7 +35,10 @@ CREATE INDEX IF NOT EXISTS idx_instances_bridge_port ON instances(bridge_port);
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name TEXT,
     username TEXT NOT NULL UNIQUE,
+    email TEXT,
+    phone TEXT,
     password_hash TEXT NOT NULL,
     openrouter_api_key TEXT NOT NULL,
     openrouter_api_key2 TEXT,
@@ -50,12 +55,22 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 
+CREATE TABLE IF NOT EXISTS system_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    current_image_ref TEXT NOT NULL,
+    current_image_version TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS containers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     instance_id INTEGER,
     project_name TEXT,
     container_name TEXT NOT NULL UNIQUE,
     docker_container_id TEXT,
+    image_ref TEXT,
+    image_version TEXT,
     host TEXT NOT NULL DEFAULT 'mebs.claw',
     port INTEGER NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'available',
@@ -140,6 +155,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE instances ADD COLUMN gateway_bind TEXT NOT NULL DEFAULT 'lan'")
 
     if _table_exists(conn, "users"):
+        if not _column_exists(conn, "users", "full_name"):
+            conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT")
+        if not _column_exists(conn, "users", "email"):
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        if not _column_exists(conn, "users", "phone"):
+            conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
         if not _column_exists(conn, "users", "openrouter_api_key2"):
             conn.execute("ALTER TABLE users ADD COLUMN openrouter_api_key2 TEXT")
         if not _column_exists(conn, "users", "gateway_url"):
@@ -153,6 +174,35 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if not _column_exists(conn, "users", "updated_at"):
             conn.execute("ALTER TABLE users ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP")
 
+    _ensure_system_settings_table(conn)
+    _ensure_system_settings_row(conn)
+    conn.execute(
+        """
+        UPDATE system_settings
+        SET
+            current_image_ref = ?,
+            current_image_version = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1
+          AND (
+            current_image_ref IS NULL OR trim(current_image_ref) = ''
+            OR current_image_version IS NULL OR trim(current_image_version) = ''
+            OR lower(trim(current_image_version)) = 'latest'
+          )
+        """,
+        (DEFAULT_CURRENT_IMAGE_REF, DEFAULT_CURRENT_IMAGE_VERSION),
+    )
+    conn.execute(
+        """
+        UPDATE instances
+        SET version = ?
+        WHERE version IS NULL
+           OR trim(version) = ''
+           OR lower(trim(version)) = 'latest'
+        """,
+        (DEFAULT_CURRENT_IMAGE_VERSION,),
+    )
+
     if _table_exists(conn, "containers"):
         if not _column_exists(conn, "containers", "instance_id"):
             conn.execute("ALTER TABLE containers ADD COLUMN instance_id INTEGER")
@@ -160,6 +210,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE containers ADD COLUMN project_name TEXT")
         if not _column_exists(conn, "containers", "docker_container_id"):
             conn.execute("ALTER TABLE containers ADD COLUMN docker_container_id TEXT")
+        if not _column_exists(conn, "containers", "image_ref"):
+            conn.execute("ALTER TABLE containers ADD COLUMN image_ref TEXT")
+        if not _column_exists(conn, "containers", "image_version"):
+            conn.execute("ALTER TABLE containers ADD COLUMN image_version TEXT")
         if not _column_exists(conn, "containers", "assigned_user_id"):
             conn.execute("ALTER TABLE containers ADD COLUMN assigned_user_id INTEGER")
         if not _column_exists(conn, "containers", "assigned_volume_name"):
@@ -176,6 +230,38 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE containers ADD COLUMN stopped_at DATETIME")
         if not _column_exists(conn, "containers", "updated_at"):
             conn.execute("ALTER TABLE containers ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        conn.execute(
+            """
+            UPDATE containers
+            SET image_ref = (
+                SELECT instances.image
+                FROM instances
+                WHERE instances.id = containers.instance_id
+            )
+            WHERE image_ref IS NULL AND instance_id IS NOT NULL
+            """
+        )
+        conn.execute(
+            """
+            UPDATE containers
+            SET image_version = (
+                SELECT instances.version
+                FROM instances
+                WHERE instances.id = containers.instance_id
+            )
+            WHERE image_version IS NULL AND instance_id IS NOT NULL
+            """
+        )
+        conn.execute(
+            """
+            UPDATE containers
+            SET image_version = ?
+            WHERE image_version IS NULL
+               OR trim(image_version) = ''
+               OR lower(trim(image_version)) = 'latest'
+            """,
+            (DEFAULT_CURRENT_IMAGE_VERSION,),
+        )
 
     conn.executescript(
         """
@@ -187,6 +273,51 @@ def _migrate(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_allocations_container_id ON container_allocations(container_id);
         CREATE INDEX IF NOT EXISTS idx_allocations_status ON container_allocations(status);
         """
+    )
+
+
+def _ensure_system_settings_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS system_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            current_image_ref TEXT NOT NULL,
+            current_image_version TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def _ensure_system_settings_row(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO system_settings (id, current_image_ref, current_image_version)
+        VALUES (1, ?, ?)
+        """,
+        (DEFAULT_CURRENT_IMAGE_REF, DEFAULT_CURRENT_IMAGE_VERSION),
+    )
+    conn.execute(
+        """
+        UPDATE system_settings
+        SET
+            current_image_ref = CASE
+                WHEN current_image_ref IS NULL OR current_image_ref = '' THEN ?
+                ELSE current_image_ref
+            END,
+            current_image_version = CASE
+                WHEN current_image_version IS NULL OR current_image_version = '' THEN ?
+                ELSE current_image_version
+            END,
+            updated_at = CASE
+                WHEN current_image_ref IS NULL OR current_image_ref = '' OR current_image_version IS NULL OR current_image_version = ''
+                    THEN CURRENT_TIMESTAMP
+                ELSE updated_at
+            END
+        WHERE id = 1
+        """,
+        (DEFAULT_CURRENT_IMAGE_REF, DEFAULT_CURRENT_IMAGE_VERSION),
     )
 
 

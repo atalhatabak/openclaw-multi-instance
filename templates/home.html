@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}OpenClaw{% endblock %}
+
+{% block body %}
+  <main class="home-shell">
+    <section class="home-hero">
+      <div class="hero-card home-hero-main">
+        <p class="eyebrow">OpenClaw Multi Instance</p>
+        <h1>OpenClaw ortamlarini merkezi olarak yonetin</h1>
+        <p class="muted">
+          Public onboarding, kullanici bazli container allocation, kalici volume ve gateway routing katmanini tek uygulamada toplar.
+        </p>
+        <div class="cta-row">
+          <a class="btn primary" href="{{ url_for('web.signin_page') }}">Kayit ol</a>
+          <a class="btn ghost" href="{{ url_for('web.login_page') }}">Giris yap</a>
+        </div>
+        <div class="home-proof-row">
+          <span class="home-proof-chip">Public signup</span>
+          <span class="home-proof-chip">Kullanici bazli allocation</span>
+          <span class="home-proof-chip">Gateway erisimi</span>
+        </div>
+        <div class="home-metric-grid">
+          <article class="home-metric">
+            <span>Provisioning</span>
+            <strong>Yeni kullanici icin otomatik hazirlama</strong>
+          </article>
+          <article class="home-metric">
+            <span>Runtime</span>
+            <strong>Atanmis container ve kalici volume</strong>
+          </article>
+          <article class="home-metric">
+            <span>Control</span>
+            <strong>Durum, port ve havuz gorunurlugu</strong>
+          </article>
+        </div>
+      </div>
+
+      <aside class="panel home-visual-panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Product Preview</p>
+            <h2>Urun gorunumu</h2>
+          </div>
+        </div>
+        <div class="image-slot image-slot-tall">
+          <span>Dashboard preview / product image</span>
+        </div>
+        <div class="home-preview-grid">
+          <article class="home-preview-card">
+            <strong>Signup ve login</strong>
+            <p>Public kayit ve ayrik giris akisi.</p>
+          </article>
+          <article class="home-preview-card">
+            <strong>Session routing</strong>
+            <p>Kullanici kendi gateway oturumuna yonlenir.</p>
+          </article>
+          <article class="home-preview-card">
+            <strong>Admin control</strong>
+            <p>Container havuzu ve atamalar tek panelde izlenir.</p>
+          </article>
+        </div>
+      </aside>
+    </section>
+
+    <section class="home-summary-grid">
+      <article class="home-summary-card">
+        <span>Onboarding</span>
+        <strong>Kayit ve giris katmani</strong>
+        <p>Kullanici kaydi, login ve profile yonlendirme birbirinden ayrik ve net bir akista sunulur.</p>
+      </article>
+      <article class="home-summary-card">
+        <span>Isolation</span>
+        <strong>Kullanici bazli runtime</strong>
+        <p>Her kullanici kendi volume, token ve atanmis container baglami ile izole edilir.</p>
+      </article>
+      <article class="home-summary-card">
+        <span>Operations</span>
+        <strong>Merkezi operasyon gorunurlugu</strong>
+        <p>Admin paneli kullanici, port, durum ve container havuzunu ayni yerde toplar.</p>
+      </article>
+    </section>
+
+    <section class="home-grid home-grid-2">
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Platform Overview</p>
+            <h2>Uygulama neyi yonetir</h2>
+          </div>
+        </div>
+        <div class="capability-grid">
+          <article class="capability-card">
+            <strong>Merkezi kontrol yuzeyi</strong>
+            <p>Public sayfalar, profil ve admin paneli ayni uygulama akisi icinde toplanir.</p>
+          </article>
+          <article class="capability-card">
+            <strong>Kullanici bazli session lifecycle</strong>
+            <p>Kayit, atama, login ve session acilisi tek bir lifecycle mantigi ile yonetilir.</p>
+          </article>
+          <article class="capability-card">
+            <strong>Gateway tabanli erisim</strong>
+            <p>Her kullanici kendi token ve ilgili gateway URL uzerinden ortamina gider.</p>
+          </article>
+          <article class="capability-card">
+            <strong>Standart deployment akisi</strong>
+            <p>Docker, volume, port ve container operasyonlari servis katmaninda normalize edilir.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Interface Placeholder</p>
+            <h2>Uygulama arayuzu</h2>
+          </div>
+        </div>
+        <div class="image-slot">
+          <span>Landing, login veya dashboard ekran gorseli</span>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Deployment Workflow</p>
+          <h2>Session akisi nasil ilerler</h2>
+        </div>
+      </div>
+      <div class="timeline-grid">
+        <article class="timeline-step">
+          <span>1</span>
+          <strong>Hesap olusur</strong>
+          <p>Kullanici kayit olur ve gerekli baglam verileri sisteme yazilir.</p>
+        </article>
+        <article class="timeline-step">
+          <span>2</span>
+          <strong>Kaynaklar eslesir</strong>
+          <p>Gateway token, volume ve container baglantisi hazirlanir.</p>
+        </article>
+        <article class="timeline-step">
+          <span>3</span>
+          <strong>Runtime hazirlanir</strong>
+          <p>Gerekirse deploy akisi yeni OpenClaw ortami olusturur veya mevcut container kullanilir.</p>
+        </article>
+        <article class="timeline-step">
+          <span>4</span>
+          <strong>Oturum acilir</strong>
+          <p>Kullanici login sonrasi dogrudan kendi gateway oturumuna yonlendirilir.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="home-grid home-grid-2">
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Control Plane</p>
+            <h2>Altyapi katmanlari</h2>
+          </div>
+        </div>
+        <div class="control-grid">
+          <article class="control-card">
+            <strong>Web katmani</strong>
+            <p>Landing, signin, login, profil ve admin ekranlari.</p>
+          </article>
+          <article class="control-card">
+            <strong>Veri katmani</strong>
+            <p>SQLite ile kullanici, instance ve allocation kayitlari.</p>
+          </article>
+          <article class="control-card">
+            <strong>Container runtime</strong>
+            <p>Docker tabanli baslatma, durdurma ve atama akislari.</p>
+          </article>
+          <article class="control-card">
+            <strong>Otomasyon katmani</strong>
+            <p>Deploy ve update scriptleri ile standart operasyon.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Visual Placeholder</p>
+            <h2>Mimari veya network diyagrami</h2>
+          </div>
+        </div>
+        <div class="image-slot image-slot-tall">
+          <span>Mimari diyagram / server topolojisi</span>
+        </div>
+      </section>
+    </section>
+
+    <section class="home-grid home-grid-3">
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Use Case</p>
+            <h2>Ic ekipler</h2>
+          </div>
+        </div>
+        <div class="use-case-card">
+          <p>Ayni makinede farkli kullanicilara ayri OpenClaw ortamlarini kontrollu sekilde sunar.</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Use Case</p>
+            <h2>Demo ve test programlari</h2>
+          </div>
+        </div>
+        <div class="use-case-card">
+          <p>Manuel kurulum vermeden hizli deneme, onboarding ve kontrollu erisim akislari sunar.</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header compact">
+          <div>
+            <p class="eyebrow">Use Case</p>
+            <h2>Merkezi operasyon</h2>
+          </div>
+        </div>
+        <div class="use-case-card">
+          <p>Container durumu, port eslesmesi ve kullanici atamalari tek panelde takip edilir.</p>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel home-cta-panel">
+      <div class="home-cta-copy">
+        <p class="eyebrow">Start</p>
+        <h2>Public onboarding ve session kontrolu hazir</h2>
+        <p class="muted">
+          Kurumsal SaaS formatinda landing, signin ve login akisi birlikte calisiyor.
+        </p>
+      </div>
+      <div class="cta-row">
+        <a class="btn primary" href="{{ url_for('web.signin_page') }}">Kayit ol</a>
+        <a class="btn ghost" href="{{ url_for('web.login_page') }}">Giris yap</a>
+      </div>
+    </section>
+  </main>
+{% endblock %}

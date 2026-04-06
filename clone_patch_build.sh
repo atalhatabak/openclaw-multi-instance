@@ -16,7 +16,7 @@ TARGET_DIR="openclaw"
 TARGET_FILE="ui/src/ui/storage.ts"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGEnn:-xenv1-openclaw}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv1-openclaw:latest}"
 OVERLAY_SOURCE_DIR="$ROOT_DIR/scripts/docker"
 OVERLAY_TARGET_DIR="$ROOT_DIR/$TARGET_DIR/scripts/docker"
 
@@ -249,6 +249,79 @@ else:
 PY
 }
 
+patch_bundled_channel_entries() {
+  local repo_dir="$1"
+
+  python3 - "$repo_dir" <<'PY'
+from pathlib import Path
+import sys
+
+repo_dir = Path(sys.argv[1])
+
+files = {
+    repo_dir / "extensions" / "mattermost" / "index.ts": (
+        'specifier: "./src/channel.js"',
+        'specifier: "./channel-plugin-api.js"',
+    ),
+    repo_dir / "extensions" / "mattermost" / "setup-entry.ts": (
+        'specifier: "./src/channel.js"',
+        'specifier: "./channel-plugin-api.js"',
+    ),
+}
+
+for path, (old, new) in files.items():
+    if not path.exists():
+        print(f"[ERROR] Dosya bulunamadi: {path}")
+        sys.exit(1)
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        print(f"[INFO] Zaten guncel: {path}")
+        continue
+    if old not in text:
+        print(f"[ERROR] Beklenen icerik bulunamadi: {path}")
+        sys.exit(1)
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+    print(f"[INFO] Guncellendi: {path}")
+
+mattermost_api = repo_dir / "extensions" / "mattermost" / "channel-plugin-api.ts"
+mattermost_api_content = """// Keep bundled channel entry imports narrow so bootstrap/discovery paths do
+// not drag the full Mattermost API barrel into lightweight plugin loads.
+export { mattermostPlugin } from "./src/channel.js";
+"""
+if mattermost_api.exists():
+    existing = mattermost_api.read_text(encoding="utf-8")
+    if existing == mattermost_api_content:
+        print(f"[INFO] Zaten guncel: {mattermost_api}")
+    else:
+        mattermost_api.write_text(mattermost_api_content, encoding="utf-8")
+        print(f"[INFO] Guncellendi: {mattermost_api}")
+else:
+    mattermost_api.write_text(mattermost_api_content, encoding="utf-8")
+    print(f"[INFO] Eklendi: {mattermost_api}")
+
+qa_setup = repo_dir / "extensions" / "qa-channel" / "setup-entry.ts"
+qa_setup_content = """import { defineBundledChannelSetupEntry } from "openclaw/plugin-sdk/channel-entry-contract";
+
+export default defineBundledChannelSetupEntry({
+  importMetaUrl: import.meta.url,
+  plugin: {
+    specifier: "./api.js",
+    exportName: "qaChannelPlugin",
+  },
+});
+"""
+if not qa_setup.exists():
+    print(f"[ERROR] Dosya bulunamadi: {qa_setup}")
+    sys.exit(1)
+existing_qa = qa_setup.read_text(encoding="utf-8")
+if existing_qa == qa_setup_content:
+    print(f"[INFO] Zaten guncel: {qa_setup}")
+else:
+    qa_setup.write_text(qa_setup_content, encoding="utf-8")
+    print(f"[INFO] Guncellendi: {qa_setup}")
+PY
+}
+
 build_image() {
   local source_dir="$1"
 
@@ -273,6 +346,10 @@ build_image() {
     "$source_dir"
 }
 
+detect_image_version() {
+  docker run --rm "$OPENCLAW_IMAGE" openclaw --version 2>/dev/null | head -n 1 | tr -d '\r'
+}
+
 
 main() {
   clone_if_needed
@@ -280,12 +357,17 @@ main() {
   cd "$TARGET_DIR"
   pull_safely
   patch_file "$TARGET_FILE"
+  patch_bundled_channel_entries "$PWD"
   cd "$ROOT_DIR"
   sync_overlay_files
   cd "$TARGET_DIR"
   build_image "$PWD"
+  built_version="$(detect_image_version || true)"
 
   log "Tamamlandı."
+  if [ -n "${built_version:-}" ]; then
+    log "  version    : $built_version"
+  fi
   log "Kontrol için:"
   log "  cd $TARGET_DIR"
   log "  git diff -- $TARGET_FILE"
