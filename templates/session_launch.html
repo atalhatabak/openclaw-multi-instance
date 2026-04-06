@@ -5,16 +5,14 @@
 {% block body %}
   <main class="launch-shell">
     <section class="panel launch-panel">
-      <p class="eyebrow">Oturum Hazirlaniyor</p>
-      <h1>{{ username }} icin OpenClaw baslatiliyor</h1>
-      <p class="muted">
-        Dashboard yeni sekmede aciliyor. Bu sayfa profil ve cihaz onay akisi icin yonlendirilecek.
-      </p>
+      <p class="eyebrow">Oturum</p>
+      <h1>{{ username }} hazirlaniyor</h1>
+      <p class="muted">Dashboard yeni sekmede aciliyor.</p>
       <div class="hero-note">
         Container: <span class="mono">{{ container_name }}</span>
       </div>
       <p class="muted">
-        Yeni sekme otomatik acilmazsa <a class="text-link" href="{{ gateway_url }}" target="_blank" rel="noopener">dashboard'u manuel ac</a>.
+        Yeni sekme acilmazsa <a class="text-link" href="{{ gateway_url }}" target="_blank" rel="noopener">manuel ac</a>.
       </p>
     </section>
   </main>

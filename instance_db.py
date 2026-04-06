@@ -7,6 +7,8 @@ import sys
 from typing import Any, Dict, Optional
 
 DEFAULT_DB_PATH = os.environ.get("OPENCLAW_DB_PATH", "./openclaw_instances.db")
+DEFAULT_CURRENT_IMAGE_REF = os.environ.get("OPENCLAW_IMAGE", "xenv1-openclaw:latest")
+DEFAULT_CURRENT_IMAGE_VERSION = os.environ.get("OPENCLAW_CURRENT_IMAGE_VERSION", "2026.4.3")
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS instances (
@@ -33,6 +35,14 @@ CREATE TABLE IF NOT EXISTS instances (
 CREATE INDEX IF NOT EXISTS idx_instances_domain ON instances(domain);
 CREATE INDEX IF NOT EXISTS idx_instances_gateway_port ON instances(gateway_port);
 CREATE INDEX IF NOT EXISTS idx_instances_bridge_port ON instances(bridge_port);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    current_image_ref TEXT NOT NULL,
+    current_image_version TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS operation_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +113,39 @@ def init_db(db_path: str) -> None:
             conn.execute("ALTER TABLE instances ADD COLUMN last_update_check_at DATETIME")
         if not _column_exists(conn, "instances", "gateway_bind"):
             conn.execute("ALTER TABLE instances ADD COLUMN gateway_bind TEXT NOT NULL DEFAULT 'lan'")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO system_settings (id, current_image_ref, current_image_version)
+            VALUES (1, ?, ?)
+            """,
+            (DEFAULT_CURRENT_IMAGE_REF, DEFAULT_CURRENT_IMAGE_VERSION),
+        )
+        conn.execute(
+            """
+            UPDATE system_settings
+            SET
+                current_image_ref = ?,
+                current_image_version = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1
+              AND (
+                current_image_ref IS NULL OR trim(current_image_ref) = ''
+                OR current_image_version IS NULL OR trim(current_image_version) = ''
+                OR lower(trim(current_image_version)) = 'latest'
+              )
+            """,
+            (DEFAULT_CURRENT_IMAGE_REF, DEFAULT_CURRENT_IMAGE_VERSION),
+        )
+        conn.execute(
+            """
+            UPDATE instances
+            SET version = ?
+            WHERE version IS NULL
+               OR trim(version) = ''
+               OR lower(trim(version)) = 'latest'
+            """,
+            (DEFAULT_CURRENT_IMAGE_VERSION,),
+        )
         conn.commit()
     finally:
         conn.close()

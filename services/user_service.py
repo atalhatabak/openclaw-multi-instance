@@ -31,10 +31,12 @@ def generate_gateway_token() -> str:
 
 
 def create_user_from_form(form: dict[str, str]) -> dict[str, Any]:
+    full_name = (form.get("full_name") or "").strip() or None
     username = normalize_username(form.get("username") or "")
+    email = (form.get("email") or "").strip() or None
+    phone = (form.get("phone") or "").strip() or None
     password = (form.get("password") or "").strip()
     openrouter_api_key = (form.get("openrouter_api_key") or "").strip()
-    openrouter_api_key2 = (form.get("openrouter_api_key2") or "").strip() or None
 
     if not password:
         raise AppError("Password zorunludur.")
@@ -45,10 +47,12 @@ def create_user_from_form(form: dict[str, str]) -> dict[str, Any]:
 
     try:
         return user_model.create_user(
+            full_name=full_name,
             username=username,
+            email=email,
+            phone=phone,
             password_hash=generate_password_hash(password),
             openrouter_api_key=openrouter_api_key,
-            openrouter_api_key2=openrouter_api_key2,
             volume_name=build_volume_name(username),
             gateway_token=generate_gateway_token(),
         )
@@ -65,20 +69,17 @@ def rollback_user_creation(user_id: int) -> None:
 def update_user_account_from_form(user: dict[str, Any], form: dict[str, str]) -> dict[str, Any]:
     password = (form.get("password") or "").strip()
     openrouter_api_key = (form.get("openrouter_api_key") or "").strip()
-    openrouter_api_key2 = (form.get("openrouter_api_key2") or "").strip()
 
     password_hash = generate_password_hash(password) if password else None
     primary_key = openrouter_api_key or None
-    secondary_key = openrouter_api_key2 or None
 
-    if password_hash is None and primary_key is None and secondary_key is None:
+    if password_hash is None and primary_key is None:
         raise AppError("Guncellenecek en az bir alan girin.")
 
     user_model.update_user_account(
         int(user["id"]),
         password_hash=password_hash,
         openrouter_api_key=primary_key,
-        openrouter_api_key2=secondary_key,
     )
     refreshed = user_model.get_user_by_id(int(user["id"]))
     if refreshed is None:

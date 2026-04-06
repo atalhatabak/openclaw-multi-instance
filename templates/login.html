@@ -5,23 +5,18 @@
 {% block body %}
   <main class="login-shell">
     <section class="hero-card">
-      <p class="eyebrow">OpenClaw Assistant</p>
-      <h1 >OpenClaw kullanıcı girisi</h1>
-      <p class="muted">
-        Giris sonrasinda size atanmis
-        oturum otomatik hazirlanir ve uygun asistana yonlendirilirsiniz.
-      </p>
-      <div class="hero-note">
-        Giriş sonrası açılan profil sayfasından parola ve token gibi bilgileri değiştirebilirsiniz.
-      </div>
+      <p class="eyebrow">OpenClaw</p>
+      <h1>Giris</h1>
+      <p class="muted">Mevcut hesabinizla devam edin.</p>
     </section>
 
     <section class="panel auth-panel">
       <div class="panel-header compact">
         <div>
           <p class="eyebrow">Giris</p>
-          <h2>Hesabinizla devam edin</h2>
+          <h2>Devam et</h2>
         </div>
+        <a class="btn ghost" href="{{ url_for('web.signin_page') }}">Kayit ol</a>
       </div>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
@@ -37,13 +32,13 @@
       <form method="post" action="{{ url_for('web.login') }}" class="form-grid" data-preopen-dashboard="1">
         <label class="field">
           <span>Username</span>
-          <input type="text" name="username" placeholder="Kullanıcı Adı" required>
+          <input type="text" name="username" placeholder="Kullanici adi" required>
         </label>
         <label class="field">
           <span>Password</span>
           <input type="password" name="password" placeholder="Parola" required>
         </label>
-        <button class="btn primary" type="submit">Giris yap ve yonlendir</button>
+        <button class="btn primary" type="submit">Giris yap</button>
       </form>
     </section>
   </main>

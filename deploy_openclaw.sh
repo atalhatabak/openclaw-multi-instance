@@ -26,13 +26,13 @@ LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_deploy.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 DOMAIN="${DOMAIN:-}"
-VERSION="latest"
+VERSION="${OPENCLAW_CURRENT_IMAGE_VERSION:-2026.4.3}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TELEGRAM_ALLOW_FROM="${TELEGRAM_ALLOW_FROM:-}"
 OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
 OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-claw}"
 OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xen-openclaw:latest}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv1-openclaw:latest}"
 CHANNEL_CHOICE="web"
 
 usage() {
@@ -40,6 +40,7 @@ usage() {
 Usage:
   $0 \
     [--domain mebs.claw] \
+    [--image-ref xenv1-openclaw:latest] \
     [--telegram-bot-token 123456:ABCDEF] \
     [--telegram-allow-from 905551112233] \
     [--openrouter-api-key or-v1-xxxxx] \
@@ -60,6 +61,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --domain)
       DOMAIN="$2"
+      shift 2
+      ;;
+    --image-ref|--image)
+      OPENCLAW_IMAGE="$2"
       shift 2
       ;;
     --version)
@@ -180,6 +185,9 @@ domain_slug="$(slugify "$DOMAIN")"
 instance_key="${DOMAIN}--${gateway_port}"
 project_name="openclaw-${gateway_port}"
 volume_name="openclaw-volume-${gateway_port}"
+OPENCLAW_HOME_VOLUME="$volume_name"
+OPENCLAW_GATEWAY_PORT="$gateway_port"
+OPENCLAW_BRIDGE_PORT="$bridge_port"
 
 if [[ -z "$OPENCLAW_GATEWAY_TOKEN" ]]; then
 #   OPENCLAW_GATEWAY_TOKEN="$(random_token)"
@@ -206,11 +214,6 @@ TELEGRAM_ALLOW_FROM=$TELEGRAM_ALLOW_FROM
 EOF
   CHANNEL_CHOICE="telegram"
 fi
-
-set -a
-# shellcheck disable=SC1090
-source "$env_file"
-set +a
 
 : "${OPENCLAW_HOME_VOLUME:?missing}"
 : "${OPENCLAW_GATEWAY_PORT:?missing}"

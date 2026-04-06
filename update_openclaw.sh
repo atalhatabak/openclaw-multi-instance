@@ -25,14 +25,13 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 INSTANCE_ID=""
 TARGET_VERSION=""
-OPENCLAW_BASE_IMAGE=""
 OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-}"
 OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-}"
 
 usage() {
   cat <<EOF
 Usage:
-  $0 --instance-id <id> [--version <version>] [--image <image>] [--gateway-bind lan|local]
+  $0 --instance-id <id> [--version <version>] [--image-ref <image>] [--gateway-bind lan|local]
 
 Notes:
   - Varsayilanlari env.base dosyasindan okur.
@@ -47,8 +46,8 @@ while [[ $# -gt 0 ]]; do
       INSTANCE_ID="$2"
       shift 2
       ;;
-    --image)
-      OPENCLAW_BASE_IMAGE="$2"
+    --image-ref|--image)
+      OPENCLAW_IMAGE="$2"
       shift 2
       ;;
     --version)
@@ -110,20 +109,25 @@ tagify() {
     | sed 's/-$//'
 }
 
-if [[ -z "$TARGET_VERSION" ]]; then
-  TARGET_VERSION="latest"
-fi
+normalize_version() {
+  local raw="${1:-}"
+  if [[ "$raw" =~ [0-9]{4}\.[0-9]+\.[0-9]+([-+._][A-Za-z0-9]+)* ]]; then
+    echo "${BASH_REMATCH[0]}"
+    return
+  fi
+  echo "$raw"
+}
 
 if [[ -z "$OPENCLAW_GATEWAY_BIND" ]]; then
   OPENCLAW_GATEWAY_BIND="${stored_gateway_bind:-lan}"
 fi
 
-if [[ -z "$OPENCLAW_BASE_IMAGE" ]]; then
-  OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:${TARGET_VERSION}"
+if [[ -z "$OPENCLAW_IMAGE" ]]; then
+  OPENCLAW_IMAGE="$(getj image)"
 fi
 
 if [[ -z "$OPENCLAW_IMAGE" ]]; then
-  OPENCLAW_IMAGE="atalhatabak/openclaw-extras:$(tagify "$TARGET_VERSION")"
+  OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv1-openclaw:latest}"
 fi
 
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.update.XXXXXX")"
@@ -149,22 +153,17 @@ fi
 
 compose_cmd=(docker compose -p "$project_name" --env-file "$env_file")
 
-echo "Pulling base image (best effort): $OPENCLAW_BASE_IMAGE"
-docker pull "$OPENCLAW_BASE_IMAGE" >/dev/null 2>&1 || true
-
-echo "Rebuilding custom image (best effort)"
-DOCKER_BUILDKIT=1 docker build -f "$ROOT_DIR/Dockerfile" --build-arg "OPENCLAW_BASE_IMAGE=$OPENCLAW_BASE_IMAGE" -t "$OPENCLAW_IMAGE" "$ROOT_DIR" >/dev/null
-
 echo "Stopping old services (preserve volume)"
 "${compose_cmd[@]}" down --remove-orphans || true
 
-echo "Starting updated services"
-"${compose_cmd[@]}" up -d --remove-orphans
+echo "Starting updated services with image: $OPENCLAW_IMAGE"
+"${compose_cmd[@]}" up -d --remove-orphans --force-recreate
 
 effective_version="$(docker run --rm "$OPENCLAW_IMAGE" openclaw --version 2>/dev/null | head -n 1 | tr -d '\r')"
 if [[ -z "$effective_version" ]]; then
   effective_version="${TARGET_VERSION:-$current_version}"
 fi
+effective_version="$(normalize_version "$effective_version")"
 
 python3 "$PY_DB_SCRIPT" --db "$DB_PATH" update_runtime \
   --id "$INSTANCE_ID" \

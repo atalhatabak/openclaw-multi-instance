@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In | OpenClaw{% endblock %}
+
+{% block body %}
+  <main class="login-shell">
+    <section class="hero-card">
+      <p class="eyebrow">OpenClaw</p>
+      <h1>Kayit ol</h1>
+      <p class="muted">Test kaydi olusturup dogrudan profile gecin.</p>
+    </section>
+
+    <section class="panel auth-panel auth-panel-wide">
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Kayit</p>
+          <h2>Yeni hesap</h2>
+        </div>
+        <a class="btn ghost" href="{{ url_for('web.login_page') }}">Giris yap</a>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-wrap">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" action="{{ url_for('web.register') }}" class="form-grid" data-preopen-dashboard="1">
+        <label class="field">
+          <span>Isim</span>
+          <input type="text" name="full_name" placeholder="Opsiyonel">
+        </label>
+        <label class="field">
+          <span>Kullanici adi</span>
+          <input type="text" name="username" placeholder="ornek.kullanici" required>
+        </label>
+        <label class="field">
+          <span>E-posta</span>
+          <input type="email" name="email" placeholder="Opsiyonel">
+        </label>
+        <label class="field">
+          <span>Telefon</span>
+          <input type="tel" name="phone" placeholder="Opsiyonel">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" placeholder="Parola" required>
+        </label>
+        <label class="field field-wide">
+          <span>OpenRouter API Key</span>
+          <input type="password" name="openrouter_api_key" placeholder="or-v1-..." required>
+        </label>
+        <button class="btn primary" type="submit">Kayit ol</button>
+      </form>
+    </section>
+  </main>
+{% endblock %}

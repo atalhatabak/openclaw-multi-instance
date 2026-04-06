@@ -8,7 +8,7 @@ export OPENCLAW_HOME=/opt/openclaw-home-template
 /usr/local/bin/openclaw config set tools.profile coding >/dev/null
 /usr/local/bin/openclaw models set openrouter/xiaomi/mimo-v2-pro >/dev/null
 /usr/local/bin/openclaw models fallbacks add openrouter/stepfun/step-3.5-flash:free
-/usr/local/bin/openclaw models fallbacks add openrouter/xiaomi/mimo-v2-omni
+
 /usr/local/bin/openclaw models set-image openrouter/xiaomi/mimo-v2-omni
 
 /usr/local/bin/openclaw models fallbacks add openrouter/moonshotai/kimi-k2.5

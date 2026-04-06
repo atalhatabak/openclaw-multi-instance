@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, session, url_for
 
 import db
 from models.container_model import get_assigned_container_for_user, list_containers
 from models.user_model import get_user_by_id, list_users
-from services.admin_service import delete_user_stack, start_container, stop_container
+from services.admin_service import (
+    delete_user_stack,
+    rebuild_current_image,
+    start_container,
+    stop_container,
+    update_container_to_current_image,
+)
 from services.command_service import AppError
 from services.container_service import assign_container_to_user, provision_container_for_user
 from services.device_service import approve_latest_device
 from services.gateway_service import build_gateway_redirect_url
+from services.log_service import write_exception_log
 from services.user_service import (
     authenticate_user,
     create_user_from_form,
@@ -17,6 +26,7 @@ from services.user_service import (
     rollback_user_creation,
     update_user_account_from_form,
 )
+from services.version_service import get_current_image_state, versions_match
 
 web_bp = Blueprint("web", __name__)
 
@@ -28,7 +38,17 @@ def ensure_db_ready() -> None:
 
 @web_bp.get("/")
 def home() -> str:
+    return render_template("home.html")
+
+
+@web_bp.get("/login")
+def login_page() -> str:
     return render_template("login.html")
+
+
+@web_bp.get("/signin")
+def signin_page() -> str:
+    return render_template("signin.html")
 
 
 @web_bp.post("/register")
@@ -41,13 +61,14 @@ def register() -> Response:
         mark_user_logged_in(int(user["id"]), gateway_url=redirect_url)
         return build_launch_response(user, container, redirect_url)
     except Exception as exc:
+        _log_web_exception("web-register-error", exc)
         if user is not None:
             try:
                 rollback_user_creation(int(user["id"]))
             except Exception:
                 pass
         flash(safe_user_error(exc), "error")
-        return redirect(url_for("web.home"))
+        return redirect(url_for("web.signin_page"))
 
 
 @web_bp.post("/login")
@@ -61,23 +82,32 @@ def login() -> Response:
         mark_user_logged_in(int(user["id"]), gateway_url=redirect_url)
         return build_launch_response(user, assignment.container, redirect_url)
     except Exception as exc:
+        _log_web_exception("web-login-error", exc)
         flash(safe_user_error(exc), "error")
-        return redirect(url_for("web.home"))
+        return redirect(url_for("web.login_page"))
 
 
 @web_bp.get("/admin")
 def admin_dashboard() -> str:
     users = list_users()
     containers = list_containers()
+    current_image = get_current_image_state()
     return render_template(
         "admin.html",
         users=users,
         containers=containers,
+        current_image=current_image,
         stats={
             "user_count": len(users),
             "active_users": sum(1 for user in users if user.get("is_active")),
             "container_count": len(containers),
             "busy_containers": sum(1 for container in containers if container.get("assigned_user_id")),
+            "current_image_version": current_image.version,
+            "outdated_containers": sum(
+                1
+                for container in containers
+                if container.get("id") and not versions_match(container.get("image_version"), current_image.version)
+            ),
         },
     )
 
@@ -93,6 +123,7 @@ def create_user() -> Response:
             "success",
         )
     except Exception as exc:
+        _log_web_exception("web-admin-create-user-error", exc)
         if user is not None:
             try:
                 rollback_user_creation(int(user["id"]))
@@ -113,6 +144,7 @@ def launch_user_session(user_id: int) -> Response:
         mark_user_logged_in(int(user["id"]), gateway_url=redirect_url)
         return build_launch_response(user, assignment.container, redirect_url)
     except Exception as exc:
+        _log_web_exception("web-launch-session-error", exc)
         flash(safe_user_error(exc), "error")
         return redirect(url_for("web.admin_dashboard"))
 
@@ -123,6 +155,7 @@ def delete_user(user_id: int) -> Response:
         delete_user_stack(user_id)
         flash("Kullanici, container ve volume silindi.", "success")
     except Exception as exc:
+        _log_web_exception("web-delete-user-error", exc)
         flash(safe_user_error(exc), "error")
     return redirect(url_for("web.admin_dashboard"))
 
@@ -153,6 +186,7 @@ def update_account() -> Response:
         flash("Hesap bilgileri guncellendi.", "success")
         return redirect(url_for("web.profile_page"))
     except Exception as exc:
+        _log_web_exception("web-update-account-error", exc)
         flash(safe_user_error(exc), "error")
         return redirect(url_for("web.profile_page"))
 
@@ -179,6 +213,35 @@ def start_container_action(container_id: int) -> Response:
         start_container(container_id)
         flash("Container baslatildi.", "success")
     except Exception as exc:
+        _log_web_exception("web-start-container-error", exc)
+        flash(safe_user_error(exc), "error")
+    return redirect(_redirect_back_default("web.admin_dashboard"))
+
+
+@web_bp.post("/admin/image/update")
+def update_image_action() -> Response:
+    try:
+        result = rebuild_current_image()
+        flash(f"Image guncellendi. Version: {result['version']}", "success")
+    except Exception as exc:
+        _log_web_exception("web-image-update-error", exc)
+        flash(safe_user_error(exc), "error")
+    return redirect(url_for("web.admin_dashboard"))
+
+
+@web_bp.post("/admin/containers/<int:container_id>/update")
+def update_container_action(container_id: int) -> Response:
+    try:
+        result = update_container_to_current_image(container_id)
+        if result["updated"]:
+            flash(
+                f"Container guncellendi. Version: {result['version']}",
+                "success",
+            )
+        else:
+            flash("Container zaten guncel.", "success")
+    except Exception as exc:
+        _log_web_exception("web-container-update-error", exc)
         flash(safe_user_error(exc), "error")
     return redirect(_redirect_back_default("web.admin_dashboard"))
 
@@ -189,6 +252,7 @@ def stop_container_action(container_id: int) -> Response:
         stop_container(container_id)
         flash("Container durduruldu.", "success")
     except Exception as exc:
+        _log_web_exception("web-stop-container-error", exc)
         flash(safe_user_error(exc), "error")
     return redirect(_redirect_back_default("web.admin_dashboard"))
 
@@ -196,13 +260,30 @@ def stop_container_action(container_id: int) -> Response:
 @web_bp.get("/admin/containers")
 def containers_page() -> str:
     containers = list_containers()
-    return render_template("containers.html", containers=containers)
+    return render_template(
+        "containers.html",
+        containers=containers,
+        current_image=get_current_image_state(),
+    )
 
 
 def safe_user_error(exc: Exception) -> str:
     if isinstance(exc, AppError):
         return str(exc)
-    return f"Islem basarisiz. Detaylar loglarda bulunabilir. ({type(exc).__name__})"
+    return f"Islem basarisiz. Hata kaydi olusturuldu. ({type(exc).__name__})"
+
+
+def _log_web_exception(action_type: str, exc: Exception) -> Path:
+    return write_exception_log(
+        action_type,
+        exc,
+        context={
+            "method": request.method,
+            "path": request.path,
+            "remote_addr": request.headers.get("X-Forwarded-For") or request.remote_addr or "",
+            "user_agent": request.user_agent.string if request.user_agent else "",
+        },
+    )
 
 
 def build_launch_response(user: dict, container: dict, redirect_url: str) -> Response:
@@ -223,13 +304,13 @@ def get_current_user_or_redirect() -> dict | Response:
     user_id = session.get("user_id")
     if not user_id:
         flash("Oturum bulunamadi. Lutfen tekrar giris yapin.", "error")
-        return redirect(url_for("web.home"))
+        return redirect(url_for("web.login_page"))
     user = get_user_by_id(int(user_id))
     if user is None:
         session.pop("user_id", None)
         session.pop("gateway_url", None)
         flash("Kullanici bulunamadi. Lutfen tekrar giris yapin.", "error")
-        return redirect(url_for("web.home"))
+        return redirect(url_for("web.login_page"))
     return user
 
 

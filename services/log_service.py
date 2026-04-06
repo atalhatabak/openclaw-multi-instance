@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import os
 import re
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -77,3 +78,30 @@ def write_log(path: Path, *, header: str, stdout: str, stderr: str) -> LogWriteR
     path.write_text(mask_secrets(content), encoding="utf-8", errors="replace")
     return LogWriteResult(path=path)
 
+
+def write_exception_log(
+    action_type: str,
+    exc: Exception,
+    *,
+    context: Optional[Mapping[str, object]] = None,
+    instance_id: Optional[int] = None,
+) -> Path:
+    header_lines = [
+        f"timestamp_utc: {datetime.now(timezone.utc).isoformat()}",
+        f"action_type: {action_type}",
+        f"instance_id: {instance_id if instance_id is not None else ''}",
+        f"exception_type: {type(exc).__name__}",
+        f"exception_message: {str(exc)}",
+    ]
+    if context:
+        for key, value in context.items():
+            header_lines.append(f"{key}: {value}")
+
+    log_path = build_log_path(action_type, instance_id=instance_id)
+    write_log(
+        log_path,
+        header="\n".join(header_lines),
+        stdout="",
+        stderr="".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+    )
+    return log_path

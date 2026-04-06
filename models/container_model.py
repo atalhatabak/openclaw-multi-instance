@@ -150,6 +150,8 @@ def create_container(
     host: str,
     port: int,
     status: str,
+    image_ref: str | None = None,
+    image_version: str | None = None,
     assigned_user_id: int | None = None,
     assigned_volume_name: str | None = None,
     gateway_token: str | None = None,
@@ -163,6 +165,8 @@ def create_container(
                 project_name,
                 container_name,
                 docker_container_id,
+                image_ref,
+                image_version,
                 host,
                 port,
                 status,
@@ -172,13 +176,15 @@ def create_container(
                 started_at,
                 last_heartbeat_at,
                 last_used_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 instance_id,
                 project_name,
                 container_name,
                 docker_container_id,
+                image_ref,
+                image_version,
                 host,
                 port,
                 status,
@@ -208,6 +214,8 @@ def update_container_runtime(
     *,
     status: str | None = None,
     docker_container_id: str | None = None,
+    image_ref: str | None = None,
+    image_version: str | None = None,
 ) -> None:
     updates = ["updated_at = CURRENT_TIMESTAMP", "last_used_at = CURRENT_TIMESTAMP"]
     params: list[Any] = []
@@ -222,6 +230,12 @@ def update_container_runtime(
     if docker_container_id is not None:
         updates.append("docker_container_id = ?")
         params.append(docker_container_id)
+    if image_ref is not None:
+        updates.append("image_ref = ?")
+        params.append(image_ref)
+    if image_version is not None:
+        updates.append("image_version = ?")
+        params.append(image_version)
     params.append(container_id)
     with get_conn() as conn:
         conn.execute(

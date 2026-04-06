@@ -6,13 +6,17 @@
   <main class="admin-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Admin Panel</p>
-        <h1>OpenClaw kullanici ve oturum yonetimi</h1>
-        <p class="muted">Kullanici olusturma, oturum baslatma ve container dagitimini tek panelden yonetin.</p>
+        <p class="eyebrow">Admin</p>
+        <h1>Kullanici ve oturum yonetimi</h1>
+        <p class="muted">Current image {{ current_image.version }} | Kullanicilar, gateway oturumlari ve container atamalari.</p>
       </div>
       <nav class="topnav">
-        <a class="btn ghost" href="{{ url_for('web.home') }}">Login</a>
-        <a class="btn ghost" href="{{ url_for('web.containers_page') }}">Container listesi</a>
+        <form method="post" action="{{ url_for('web.update_image_action') }}" onsubmit="return confirm('Image yeniden build edilip current image version guncellensin mi?')">
+          <button class="btn primary" type="submit">Image Guncelle</button>
+        </form>
+        <a class="btn ghost" href="{{ url_for('web.login_page') }}">Giris</a>
+        <a class="btn ghost" href="{{ url_for('web.signin_page') }}">Kayit</a>
+        <a class="btn ghost" href="{{ url_for('web.containers_page') }}">Containerlar</a>
       </nav>
     </header>
 
@@ -43,118 +47,97 @@
         <span>Dolu container</span>
         <strong>{{ stats.busy_containers }}</strong>
       </article>
+      <article class="stat-card">
+        <span>Image version</span>
+        <strong>{{ stats.current_image_version }}</strong>
+      </article>
+      <article class="stat-card">
+        <span>Bekleyen update</span>
+        <strong>{{ stats.outdated_containers }}</strong>
+      </article>
     </section>
 
-    <section class="panel split-panel">
-      <div class="panel-section">
-        <div class="panel-header compact">
-          <div>
-            <p class="eyebrow">Yeni kullanici</p>
-            <h2>Hesap olustur ve container hazirla</h2>
-          </div>
+    <section class="panel">
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Kullanicilar</p>
+          <h2>Gateway ve containerlar</h2>
         </div>
-        <form method="post" action="{{ url_for('web.create_user') }}" class="form-grid">
-          <label class="field">
-            <span>Yeni Username</span>
-            <input type="text" name="username" placeholder="yeni kullanici" required>
-          </label>
-          <label class="field">
-            <span>Yeni Password</span>
-            <input type="password" name="password" placeholder="Login sifresi" required>
-          </label>
-          <label class="field field-wide">
-            <span>OpenRouter API Key</span>
-            <input type="password" name="openrouter_api_key" placeholder="or-v1-..." required>
-          </label>
-          <label class="field field-wide">
-            <span>OpenRouter API Key 2 (opsiyonel)</span>
-            <input type="password" name="openrouter_api_key2" placeholder="Ikinci key gerekirse">
-          </label>
-          <button class="btn primary" type="submit">Kayit olustur ve container ac</button>
-        </form>
+        <input id="userSearch" class="search-input" type="search" placeholder="Ara">
       </div>
 
-      <div class="panel-section">
-        <div class="panel-header compact">
-          <div>
-            <p class="eyebrow">Kullanici listesi</p>
-            <h2>Gateway ve container durumu</h2>
-          </div>
-          <input id="userSearch" class="search-input" type="search" placeholder="username / volume / container ara">
-        </div>
-
-        <div class="table-wrap">
-          <table class="table" id="userTable">
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Volume</th>
-                <th>Gateway</th>
-                <th>Durum</th>
-                <th>Container</th>
-                <th>Olusturulma</th>
-                <th>Islem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for user in users %}
-                <tr data-user-row>
-                  <td>{{ user.username }}</td>
-                  <td>{{ user.volume_name }}</td>
-                  <td class="mono">
-                    <div>token={{ user.gateway_token }}</div>
-                    <div class="meta-text">
-                      {% if user.gateway_url %}
-                        {{ user.gateway_url }}
-                      {% else %}
-                        redirect url login sonrasi olusur
-                      {% endif %}
-                    </div>
-                  </td>
-                  <td>
-                    <span class="badge {{ 'ok' if user.is_active else 'warn' }}">
-                      {{ 'active' if user.is_active else 'inactive' }}
-                    </span>
-                    <div class="meta-text">
-                      volume {{ 'ready' if user.volume_prepared_at else 'pending' }}
-                    </div>
-                  </td>
-                  <td>
-                    {% if user.container_name %}
-                      <div>{{ user.container_name }}</div>
-                      <div class="meta-text">{{ user.container_host }}:{{ user.container_port }} | {{ user.container_status }}</div>
+      <div class="table-wrap">
+        <table class="table" id="userTable">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Volume</th>
+              <th>Gateway</th>
+              <th>Durum</th>
+              <th>Container</th>
+              <th>Olusturulma</th>
+              <th>Islem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in users %}
+              <tr data-user-row>
+                <td>{{ user.username }}</td>
+                <td>{{ user.volume_name }}</td>
+                <td class="mono">
+                  <div>token={{ user.gateway_token }}</div>
+                  <div class="meta-text">
+                    {% if user.gateway_url %}
+                      {{ user.gateway_url }}
                     {% else %}
-                      <span class="muted">Container yok</span>
+                      -
                     {% endif %}
-                  </td>
-                  <td>{{ user.created_at }}</td>
-                  <td>
-                    <div class="action-stack">
-                      <form method="post" action="{{ url_for('web.launch_user_session', user_id=user.id) }}">
-                        <button class="btn secondary" type="submit">Login ol</button>
-                      </form>
-                      <form method="post" action="{{ url_for('web.delete_user', user_id=user.id) }}" onsubmit="return confirm('Bu kullanici, volume ve container tamamen silinecek. Devam edilsin mi?')">
-                        <button class="btn danger" type="submit">Sil</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% else %}
-                <tr>
-                  <td colspan="7" class="muted empty-cell">Henuz kullanici yok.</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="badge {{ 'ok' if user.is_active else 'warn' }}">
+                    {{ 'aktif' if user.is_active else 'pasif' }}
+                  </span>
+                  <div class="meta-text">
+                    volume {{ 'hazir' if user.volume_prepared_at else 'bekliyor' }}
+                  </div>
+                </td>
+                <td>
+                  {% if user.container_name %}
+                    <div>{{ user.container_name }}</div>
+                    <div class="meta-text">{{ user.container_host }}:{{ user.container_port }} | {{ user.container_status }}</div>
+                    <div class="meta-text">image {{ current_image.version }} | container {{ user.container_image_version or '-' }}</div>
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td>{{ user.created_at }}</td>
+                <td>
+                  <div class="action-stack">
+                    <form method="post" action="{{ url_for('web.launch_user_session', user_id=user.id) }}">
+                      <button class="btn secondary" type="submit">Giris</button>
+                    </form>
+                    <form method="post" action="{{ url_for('web.delete_user', user_id=user.id) }}" onsubmit="return confirm('Bu kullanici, volume ve container tamamen silinecek. Devam edilsin mi?')">
+                      <button class="btn danger" type="submit">Sil</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="7" class="muted empty-cell">Kayit yok.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </section>
 
     <section class="panel">
       <div class="panel-header compact">
         <div>
-          <p class="eyebrow">Container ozeti</p>
-          <h2>Dedicated container listesi</h2>
+          <p class="eyebrow">Containerlar</p>
+          <h2>Durum ve atamalar</h2>
         </div>
       </div>
       <div class="table-wrap">
@@ -163,6 +146,8 @@
             <tr>
               <th>Name</th>
               <th>Status</th>
+              <th>Image ver</th>
+              <th>Container ver</th>
               <th>Host</th>
               <th>Port</th>
               <th>Assigned user</th>
@@ -176,6 +161,8 @@
               <tr class="status-row status-{{ container.status }}">
                 <td>{{ container.container_name }}</td>
                 <td><span class="badge">{{ container.status }}</span></td>
+                <td>{{ current_image.version }}</td>
+                <td>{{ container.image_version or '-' }}</td>
                 <td>{{ container.host }}</td>
                 <td>{{ container.port }}</td>
                 <td>{{ container.assigned_username or '-' }}</td>
@@ -183,6 +170,9 @@
                 <td>{{ container.last_used_at or container.last_heartbeat_at or '-' }}</td>
                 <td>
                   <div class="action-stack">
+                    <form method="post" action="{{ url_for('web.update_container_action', container_id=container.id) }}" onsubmit="return confirm('Container current image ile yeniden olusturulsun mu?')">
+                      <button class="btn primary" type="submit">Guncelle</button>
+                    </form>
                     {% if container.status in ['stopped', 'error'] %}
                       <form method="post" action="{{ url_for('web.start_container_action', container_id=container.id) }}">
                         <button class="btn secondary" type="submit">Calistir</button>
@@ -197,7 +187,7 @@
               </tr>
             {% else %}
               <tr>
-                <td colspan="8" class="muted empty-cell">Henuz container kaydi yok.</td>
+                <td colspan="10" class="muted empty-cell">Kayit yok.</td>
               </tr>
             {% endfor %}
           </tbody>

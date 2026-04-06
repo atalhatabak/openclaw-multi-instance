@@ -11,6 +11,7 @@ from db import get_conn, row_to_dict
 from models import allocation_model, container_model
 from services.command_service import AppError, run_cmd_logged
 from services.user_service import mark_user_volume_prepared, sync_user_provisioning
+from services.version_service import get_current_image_state, normalize_version
 
 DEFAULT_CONTAINER_HOST = os.environ.get("OPENCLAW_GATEWAY_HOST", "mebs.claw")
 DEPLOY_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "deploy_openclaw.sh"
@@ -80,6 +81,7 @@ def provision_container_for_user(user: dict[str, Any]) -> dict[str, Any]:
     instance = _get_instance_by_token(str(user["gateway_token"]))
     deploy_result = None
     if instance is None:
+        current_image = get_current_image_state()
         deploy_result = run_cmd_logged(
             [
                 "bash",
@@ -88,6 +90,10 @@ def provision_container_for_user(user: dict[str, Any]) -> dict[str, Any]:
                 str(user["openrouter_api_key"]),
                 "--gateway-token",
                 str(user["gateway_token"]),
+                "--version",
+                current_image.version,
+                "--image-ref",
+                current_image.image_ref,
             ],
             check=True,
             action_type="deploy-user-container",
@@ -105,6 +111,7 @@ def _register_container_from_instance(user: dict[str, Any], instance: dict[str, 
     container_name = _gateway_container_name(str(instance["project_name"]))
     docker_container_id = _inspect_container_id(container_name)
     status = _map_docker_status(_inspect_container_status(container_name))
+    image_ref, image_version = _resolve_instance_image_state(instance)
 
     sync_user_provisioning(
         int(user["id"]),
@@ -124,6 +131,8 @@ def _register_container_from_instance(user: dict[str, Any], instance: dict[str, 
             int(existing_for_instance["id"]),
             status="assigned" if status == "running" else status,
             docker_container_id=docker_container_id,
+            image_ref=image_ref,
+            image_version=image_version,
         )
         allocation_model.release_active_allocations(user_id=int(user["id"]))
         allocation_model.create_allocation(
@@ -141,6 +150,8 @@ def _register_container_from_instance(user: dict[str, Any], instance: dict[str, 
         project_name=str(instance["project_name"]),
         container_name=container_name,
         docker_container_id=docker_container_id,
+        image_ref=image_ref,
+        image_version=image_version,
         host=DEFAULT_CONTAINER_HOST,
         port=int(instance["gateway_port"]),
         status=status,
@@ -158,6 +169,7 @@ def _register_container_from_instance(user: dict[str, Any], instance: dict[str, 
 
 
 def ensure_container_started(container: dict[str, Any]) -> dict[str, Any]:
+    container = _sync_container_image_state(container)
     container_id = int(container["id"])
     container_name = str(container["container_name"])
     raw_status = _inspect_container_status(container_name)
@@ -274,6 +286,19 @@ def _get_instance_by_token(token: str) -> dict[str, Any] | None:
     return row_to_dict(row)
 
 
+def _get_instance_by_id(instance_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM instances
+            WHERE id = ?
+            """,
+            (instance_id,),
+        ).fetchone()
+    return row_to_dict(row)
+
+
 def _get_container_by_instance_id(instance_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         row = conn.execute(
@@ -287,6 +312,34 @@ def _get_container_by_instance_id(instance_id: int) -> dict[str, Any] | None:
             (instance_id,),
         ).fetchone()
     return row_to_dict(row)
+
+
+def _resolve_instance_image_state(instance: dict[str, Any]) -> tuple[str, str]:
+    current_image = get_current_image_state()
+    image_ref = str(instance.get("image") or current_image.image_ref).strip()
+    image_version = normalize_version(instance.get("version"), fallback=current_image.version)
+    return image_ref, image_version
+
+
+def _sync_container_image_state(container: dict[str, Any]) -> dict[str, Any]:
+    instance_id = container.get("instance_id")
+    if not instance_id:
+        return container
+    instance = _get_instance_by_id(int(instance_id))
+    if instance is None:
+        return container
+    image_ref, image_version = _resolve_instance_image_state(instance)
+    current_ref = str(container.get("image_ref") or "").strip()
+    current_version = normalize_version(container.get("image_version"))
+    if current_ref == image_ref and current_version == image_version:
+        return container
+    container_model.update_container_runtime(
+        int(container["id"]),
+        image_ref=image_ref,
+        image_version=image_version,
+    )
+    refreshed = container_model.get_container_by_id(int(container["id"]))
+    return refreshed or container
 
 
 def _inspect_container_status(container_name: str) -> str:
