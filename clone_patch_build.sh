@@ -3,20 +3,20 @@ set -Eeuo pipefail
 
 REPO_URL="https://github.com/openclaw/openclaw.git"
 
-# ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
-# if [[ -f "$ENV_BASE_FILE" ]]; then
-#   set -a
-#   # shellcheck disable=SC1090
-#   source "$ENV_BASE_FILE"
-#   set +a
-# fi
+ENV_BASE_FILE="./env.base"
+if [[ -f "$ENV_BASE_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_BASE_FILE"
+  set +a
+fi
 
 
 TARGET_DIR="openclaw"
 TARGET_FILE="ui/src/ui/storage.ts"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGEnn:-xenv1-openclaw}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenvx-openclaw}"
 OVERLAY_SOURCE_DIR="$ROOT_DIR/scripts/docker"
 OVERLAY_TARGET_DIR="$ROOT_DIR/$TARGET_DIR/scripts/docker"
 
