@@ -6,3 +6,4 @@ generated/
 __pycache__/
 *.pyc
 openclaw
+.codex
