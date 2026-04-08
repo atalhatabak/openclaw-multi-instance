@@ -180,20 +180,12 @@ query_block = """  const queryUrl = getGatewayUrlFromQuery();
   }
 """
 
-load_settings_block_old = """    const parsedGatewayUrl =
-      typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
-        ? parsed.gatewayUrl.trim()
-        : defaults.gatewayUrl;
-    const gatewayUrl = parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl;
-"""
-
-load_settings_block_new = """    const queryUrl = getGatewayUrlFromQuery();
-    const parsedGatewayUrl =
-      typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
-        ? parsed.gatewayUrl.trim()
-        : defaults.gatewayUrl;
-    const gatewayUrl = queryUrl ?? (parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl);
-"""
+query_line = "    const queryUrl = getGatewayUrlFromQuery();\n"
+gateway_line_old = "    const gatewayUrl = parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl;\n"
+gateway_line_new = (
+    "    const gatewayUrl = queryUrl ?? "
+    "(parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl);\n"
+)
 
 changed = False
 function_pattern = re.compile(
@@ -230,14 +222,28 @@ else:
     print("[INFO] queryUrl override bloğu eklendi.")
     changed = True
 
-if load_settings_block_new in text:
+if gateway_line_new in text:
     print("[INFO] loadSettings query override bloğu zaten guncel.")
 else:
-    if load_settings_block_old not in text:
-        print("[ERROR] loadSettings gatewayUrl bloğu bulunamadı.")
+    lines = text.splitlines(keepends=True)
+    gateway_index = next((i for i, line in enumerate(lines) if line == gateway_line_old), None)
+    if gateway_index is None:
+        print("[ERROR] loadSettings gatewayUrl satırı bulunamadı.")
         sys.exit(1)
 
-    text = text.replace(load_settings_block_old, load_settings_block_new, 1)
+    parsed_index = gateway_index - 1
+    while parsed_index >= 0 and "const parsedGatewayUrl" not in lines[parsed_index]:
+        parsed_index -= 1
+    if parsed_index < 0:
+        print("[ERROR] loadSettings parsedGatewayUrl satırı bulunamadı.")
+        sys.exit(1)
+
+    if parsed_index == 0 or lines[parsed_index - 1] != query_line:
+        lines.insert(parsed_index, query_line)
+        gateway_index += 1
+
+    lines[gateway_index] = gateway_line_new
+    text = "".join(lines)
     print("[INFO] loadSettings query override bloğu guncellendi.")
     changed = True
 
@@ -355,7 +361,7 @@ main() {
   clone_if_needed
 
   cd "$TARGET_DIR"
-  pull_safely
+  # pull_safely
   patch_file "$TARGET_FILE"
   patch_bundled_channel_entries "$PWD"
   cd "$ROOT_DIR"

@@ -7,7 +7,7 @@ from typing import Any
 from models import container_model, instance_model, user_model
 from services.command_service import AppError, run_cmd_logged
 from services.container_service import ensure_container_started
-from services.docker_service import compose_down_and_remove_volume, compose_stop, compose_up, docker_volume_rm
+from services.docker_service import compose_down_and_remove_volume, compose_stop, docker_volume_rm
 from services.version_service import (
     detect_image_version,
     get_current_image_state,
@@ -48,13 +48,6 @@ def start_container(container_id: int) -> dict[str, Any]:
     container = container_model.get_container_by_id(container_id)
     if container is None:
         raise AppError("Container bulunamadi.")
-    instance_id = container.get("instance_id")
-    if not instance_id:
-        raise AppError("Container instance kaydi eksik.")
-    instance = instance_model.get_instance_by_id(int(instance_id))
-    if instance is None:
-        raise AppError("Instance bulunamadi.")
-    compose_up(instance, instance_id=int(instance["id"]))
     return ensure_container_started(container)
 
 
