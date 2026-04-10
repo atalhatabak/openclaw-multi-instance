@@ -11,8 +11,16 @@
         <p class="muted">Current image {{ current_image.version }} | Kullanicilar, gateway oturumlari ve container atamalari.</p>
       </div>
       <nav class="topnav">
-        <form method="post" action="{{ url_for('web.update_image_action') }}" onsubmit="return confirm('Image yeniden build edilip current image version guncellensin mi?')">
-          <button class="btn primary" type="submit">Image Guncelle</button>
+        <form
+          method="post"
+          action="{{ url_for('web.update_image_action') }}"
+          data-image-update-form="1"
+          data-async-url="{{ url_for('web.start_image_update_action') }}"
+          onsubmit="return confirm('Image yeniden build edilip current image version guncellensin mi?')"
+        >
+          <button class="btn primary" type="submit">
+            {{ 'Image Guncelleniyor' if image_log_snapshot.selected_log and image_log_snapshot.selected_log.is_running else 'Image Guncelle' }}
+          </button>
         </form>
         <a class="btn ghost" href="{{ url_for('web.login_page') }}">Giris</a>
         <a class="btn ghost" href="{{ url_for('web.signin_page') }}">Kayit</a>
@@ -55,6 +63,79 @@
         <span>Bekleyen update</span>
         <strong>{{ stats.outdated_containers }}</strong>
       </article>
+    </section>
+
+    <section
+      class="panel image-log-panel"
+      id="imageLogPanel"
+      data-logs-url="{{ url_for('web.image_logs_api') }}"
+      data-line-limit="{{ image_log_snapshot.line_limit }}"
+      data-selected-log-id="{{ image_log_snapshot.selected_log.id if image_log_snapshot.selected_log else '' }}"
+      data-expanded="0"
+    >
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Image Logs</p>
+          <h2>Canli build editoru</h2>
+          <p class="muted">Sadece son {{ image_log_snapshot.line_limit }} satir gosterilir. Tam log dosyada tutulur, tarayiciya yigilmaz.</p>
+        </div>
+        <div class="log-toolbar">
+          <span
+            class="badge {{ 'ok' if image_log_snapshot.selected_log and image_log_snapshot.selected_log.status == 'success' else 'warn' }}"
+            id="imageLogStatusBadge"
+          >
+            {% if image_log_snapshot.selected_log %}
+              {{ 'running' if image_log_snapshot.selected_log.is_running else image_log_snapshot.selected_log.status }}
+            {% else %}
+              idle
+            {% endif %}
+          </span>
+          <button class="btn ghost" type="button" id="imageLogToggleButton" aria-expanded="false" aria-controls="imageLogContent">Loglari Ac</button>
+          <div class="image-log-secondary-controls" id="imageLogSecondaryControls">
+            <button class="btn ghost" type="button" id="imageLogRefreshButton">Yenile</button>
+            <label class="log-follow-toggle" for="imageLogFollowToggle">
+              <input id="imageLogFollowToggle" type="checkbox" checked>
+              Auto follow
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="image-log-content" id="imageLogContent">
+        <div class="image-log-grid">
+          <div class="image-log-list" id="imageLogList">
+            {% for log in image_log_snapshot.recent_logs %}
+              <button
+                class="image-log-item{% if image_log_snapshot.selected_log and image_log_snapshot.selected_log.id == log.id %} active{% endif %}"
+                type="button"
+                data-log-id="{{ log.id }}"
+              >
+                <strong>#{{ log.id }}</strong>
+                <span>{{ 'running' if log.is_running else log.status }}</span>
+                <span>{{ log.created_at }}</span>
+              </button>
+            {% else %}
+              <div class="image-log-empty muted">Henuz image logu yok.</div>
+            {% endfor %}
+          </div>
+
+          <div class="image-log-viewer-shell">
+            <div class="image-log-meta" id="imageLogMeta">
+              {% if image_log_snapshot.selected_log %}
+                <span>log #{{ image_log_snapshot.selected_log.id }}</span>
+                <span>{{ image_log_snapshot.selected_log.created_at }}</span>
+                <span>{{ image_log_snapshot.log_path }}</span>
+                {% if image_log_snapshot.truncated %}
+                  <span>tail mode aktif</span>
+                {% endif %}
+              {% else %}
+                <span>Bir image update baslatildiginda log buraya akacak.</span>
+              {% endif %}
+            </div>
+            <pre class="image-log-viewer mono" id="imageLogOutput">{% if image_log_snapshot.content %}{{ image_log_snapshot.content }}{% else %}Henuz image logu yok.{% endif %}</pre>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="panel">

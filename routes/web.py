@@ -9,7 +9,9 @@ from models.container_model import get_assigned_container_for_user, list_contain
 from models.user_model import get_user_by_id, list_users
 from services.admin_service import (
     delete_user_stack,
+    get_image_update_log_snapshot,
     rebuild_current_image,
+    start_current_image_rebuild,
     start_container,
     stop_container,
     update_container_to_current_image,
@@ -92,11 +94,13 @@ def admin_dashboard() -> str:
     users = list_users()
     containers = list_containers()
     current_image = get_current_image_state()
+    image_log_snapshot = get_image_update_log_snapshot()
     return render_template(
         "admin.html",
         users=users,
         containers=containers,
         current_image=current_image,
+        image_log_snapshot=image_log_snapshot,
         stats={
             "user_count": len(users),
             "active_users": sum(1 for user in users if user.get("is_active")),
@@ -227,6 +231,29 @@ def update_image_action() -> Response:
         _log_web_exception("web-image-update-error", exc)
         flash(safe_user_error(exc), "error")
     return redirect(url_for("web.admin_dashboard"))
+
+
+@web_bp.post("/admin/image/update/start")
+def start_image_update_action() -> Response:
+    try:
+        result = start_current_image_rebuild()
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        _log_web_exception("web-image-update-start-error", exc)
+        return jsonify({"ok": False, "error": safe_user_error(exc)}), 500
+
+
+@web_bp.get("/admin/image/logs")
+def image_logs_api() -> Response:
+    raw_log_id = (request.args.get("log_id") or "").strip()
+    log_id = None
+    if raw_log_id:
+        try:
+            log_id = int(raw_log_id)
+        except ValueError:
+            return jsonify({"ok": False, "error": "Gecersiz log_id"}), 400
+    snapshot = get_image_update_log_snapshot(log_id=log_id)
+    return jsonify({"ok": True, **snapshot})
 
 
 @web_bp.post("/admin/containers/<int:container_id>/update")

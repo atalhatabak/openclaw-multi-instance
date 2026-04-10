@@ -61,6 +61,15 @@ class LogWriteResult:
     path: Path
 
 
+@dataclass
+class LogTailResult:
+    path: Path
+    content: str
+    exists: bool
+    truncated: bool
+    size_bytes: int
+
+
 def write_log(path: Path, *, header: str, stdout: str, stderr: str) -> LogWriteResult:
     path.parent.mkdir(parents=True, exist_ok=True)
     content = "\n".join(
@@ -77,6 +86,75 @@ def write_log(path: Path, *, header: str, stdout: str, stderr: str) -> LogWriteR
     )
     path.write_text(mask_secrets(content), encoding="utf-8", errors="replace")
     return LogWriteResult(path=path)
+
+
+def write_live_log_header(path: Path, *, header: str) -> LogWriteResult:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(
+        [
+            header.rstrip(),
+            "",
+            "---- LIVE OUTPUT ----",
+            "",
+        ]
+    )
+    path.write_text(mask_secrets(content), encoding="utf-8", errors="replace")
+    return LogWriteResult(path=path)
+
+
+def append_log_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", errors="replace") as handle:
+        handle.write(mask_secrets(text))
+        handle.flush()
+
+
+def resolve_managed_log_path(raw_path: str | Path) -> Path | None:
+    candidate = Path(raw_path).expanduser()
+    resolved = candidate.resolve(strict=False)
+    root = LOG_ROOT.resolve(strict=False)
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return None
+    return resolved
+
+
+def read_log_tail(path: Path, *, max_lines: int = 320, max_bytes: int = 262144) -> LogTailResult:
+    if not path.exists():
+        return LogTailResult(
+            path=path,
+            content="",
+            exists=False,
+            truncated=False,
+            size_bytes=0,
+        )
+
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        size_bytes = handle.tell()
+        start = max(0, size_bytes - max_bytes)
+        handle.seek(start)
+        payload = handle.read()
+
+    truncated = start > 0
+    text = payload.decode("utf-8", errors="replace")
+    if truncated:
+        first_break = text.find("\n")
+        text = text[first_break + 1 :] if first_break >= 0 else ""
+
+    lines = text.splitlines()
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+        truncated = True
+
+    return LogTailResult(
+        path=path,
+        content="\n".join(lines),
+        exists=True,
+        truncated=truncated,
+        size_bytes=size_bytes,
+    )
 
 
 def write_exception_log(
