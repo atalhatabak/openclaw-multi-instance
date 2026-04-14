@@ -127,7 +127,7 @@ if [[ -z "$OPENCLAW_IMAGE" ]]; then
 fi
 
 if [[ -z "$OPENCLAW_IMAGE" ]]; then
-  OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv1-openclaw:latest}"
+  OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv4-openclaw:latest}"
 fi
 
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.update.XXXXXX")"
