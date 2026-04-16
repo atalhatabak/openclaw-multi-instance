@@ -17,6 +17,8 @@ fi
 
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
+DEFAULT_OPENCLAW_VERSION="${OPENCLAW_CURRENT_IMAGE_VERSION:-2026.4.3}"
+DEFAULT_OPENCLAW_IMAGE="xen-v${DEFAULT_OPENCLAW_VERSION}"
 
 LOG_DIR="${OPENCLAW_LOG_DIR:-$ROOT_DIR/logs/update}"
 mkdir -p "$LOG_DIR"
@@ -127,7 +129,7 @@ if [[ -z "$OPENCLAW_IMAGE" ]]; then
 fi
 
 if [[ -z "$OPENCLAW_IMAGE" ]]; then
-  OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv4-openclaw:latest}"
+  OPENCLAW_IMAGE="$DEFAULT_OPENCLAW_IMAGE"
 fi
 
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.update.XXXXXX")"

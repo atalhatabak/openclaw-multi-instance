@@ -90,12 +90,14 @@ p {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 a:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.24);
   outline-offset: 2px;
@@ -673,6 +675,39 @@ a:focus-visible {
   gap: 12px;
 }
 
+.image-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.image-catalog-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.image-catalog-card strong {
+  font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.image-catalog-card span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.image-catalog-card.is-current {
+  border-color: rgba(37, 99, 235, 0.32);
+  background:
+    linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(15, 118, 110, 0.04)),
+    var(--surface);
+}
+
 .stat-card {
   padding: 14px 16px;
   display: grid;
@@ -900,16 +935,33 @@ input {
   color: var(--text);
 }
 
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 10px 12px;
+  color: var(--text);
+}
+
 input:disabled,
-input[readonly] {
+input[readonly],
+select:disabled {
   background: var(--surface-soft);
   color: var(--muted);
 }
 
-input:focus {
+input:focus,
+select:focus {
   outline: none;
   border-color: rgba(37, 99, 235, 0.35);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
 }
 
 .search-input {

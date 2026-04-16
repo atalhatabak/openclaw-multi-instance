@@ -6,13 +6,11 @@ export OPENCLAW_HOME=/opt/openclaw-home-template
 
 /usr/local/bin/openclaw config set gateway.mode local >/dev/null
 /usr/local/bin/openclaw config set tools.profile coding >/dev/null
-/usr/local/bin/openclaw models set openrouter/xiaomi/mimo-v2-pro >/dev/null
-/usr/local/bin/openclaw models fallbacks add openrouter/stepfun/step-3.5-flash:free
+/usr/local/bin/openclaw models set openrouter/xiaomi/mimo-v2-flash >/dev/null
+/usr/local/bin/openclaw models fallbacks add openrouter/xiaomi/mimo-v2-pro
 
 /usr/local/bin/openclaw models set-image openrouter/xiaomi/mimo-v2-omni
-
 /usr/local/bin/openclaw models fallbacks add openrouter/moonshotai/kimi-k2.5
-
 
 /usr/local/bin/openclaw config set browser.enabled true >/dev/null
 /usr/local/bin/openclaw config set tools.exec.security full >/dev/null

@@ -9,6 +9,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from models import user_model
 from services.command_service import AppError
+from services.version_service import get_current_image_state, resolve_image_state
 
 USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]{1,62}[a-z0-9]$")
 
@@ -37,6 +38,7 @@ def create_user_from_form(form: dict[str, str]) -> dict[str, Any]:
     phone = (form.get("phone") or "").strip() or None
     password = (form.get("password") or "").strip()
     openrouter_api_key = (form.get("openrouter_api_key") or "").strip()
+    requested_image_ref = (form.get("image_ref") or "").strip()
 
     if not password:
         raise AppError("Password zorunludur.")
@@ -44,6 +46,12 @@ def create_user_from_form(form: dict[str, str]) -> dict[str, Any]:
         raise AppError("OpenRouter API Key zorunludur.")
     if user_model.is_username_taken(username):
         raise AppError("Bu username zaten kayıtlı.")
+
+    selected_image = (
+        resolve_image_state(requested_image_ref)
+        if requested_image_ref
+        else get_current_image_state()
+    )
 
     try:
         return user_model.create_user(
@@ -55,6 +63,8 @@ def create_user_from_form(form: dict[str, str]) -> dict[str, Any]:
             openrouter_api_key=openrouter_api_key,
             volume_name=build_volume_name(username),
             gateway_token=generate_gateway_token(),
+            preferred_image_ref=selected_image.image_ref,
+            preferred_image_version=selected_image.version,
         )
     except sqlite3.IntegrityError as exc:
         if user_model.is_unique_violation(exc):

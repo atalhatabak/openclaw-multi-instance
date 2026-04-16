@@ -11,7 +11,7 @@ from db import get_conn, row_to_dict
 from models import allocation_model, container_model
 from services.command_service import AppError, run_cmd_logged
 from services.user_service import mark_user_volume_prepared, sync_user_provisioning
-from services.version_service import get_current_image_state, normalize_version
+from services.version_service import get_current_image_state, normalize_version, resolve_image_state
 
 DEFAULT_CONTAINER_HOST = os.environ.get("OPENCLAW_GATEWAY_HOST", "mebs.claw")
 DEPLOY_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "deploy_openclaw.sh"
@@ -81,7 +81,7 @@ def provision_container_for_user(user: dict[str, Any]) -> dict[str, Any]:
     instance = _get_instance_by_token(str(user["gateway_token"]))
     deploy_result = None
     if instance is None:
-        current_image = get_current_image_state()
+        selected_image = _resolve_user_preferred_image(user)
         deploy_result = run_cmd_logged(
             [
                 "bash",
@@ -91,9 +91,9 @@ def provision_container_for_user(user: dict[str, Any]) -> dict[str, Any]:
                 "--gateway-token",
                 str(user["gateway_token"]),
                 "--version",
-                current_image.version,
+                selected_image.version,
                 "--image-ref",
-                current_image.image_ref,
+                selected_image.image_ref,
             ],
             check=True,
             action_type="deploy-user-container",
@@ -319,6 +319,18 @@ def _resolve_instance_image_state(instance: dict[str, Any]) -> tuple[str, str]:
     image_ref = str(instance.get("image") or current_image.image_ref).strip()
     image_version = normalize_version(instance.get("version"), fallback=current_image.version)
     return image_ref, image_version
+
+
+def _resolve_user_preferred_image(user: dict[str, Any]):
+    preferred_image_ref = str(user.get("preferred_image_ref") or "").strip()
+    preferred_image_version = normalize_version(user.get("preferred_image_version"))
+    if preferred_image_ref:
+        return resolve_image_state(
+            preferred_image_ref,
+            fallback_version=preferred_image_version,
+            allow_unmanaged=True,
+        )
+    return get_current_image_state()
 
 
 def _sync_container_image_state(container: dict[str, Any]) -> dict[str, Any]:

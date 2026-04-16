@@ -7,8 +7,8 @@ from typing import Any, Iterable, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("OPENCLAW_DB_PATH", BASE_DIR / "openclaw_instances.db"))
-DEFAULT_CURRENT_IMAGE_REF = os.environ.get("OPENCLAW_IMAGE", "xenv1-openclaw:latest")
 DEFAULT_CURRENT_IMAGE_VERSION = os.environ.get("OPENCLAW_CURRENT_IMAGE_VERSION", "2026.4.3")
+DEFAULT_CURRENT_IMAGE_REF = os.environ.get("OPENCLAW_IMAGE", f"xen-v{DEFAULT_CURRENT_IMAGE_VERSION}")
 
 
 SCHEMA_SQL = """
@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS users (
     openrouter_api_key2 TEXT,
     volume_name TEXT NOT NULL UNIQUE,
     gateway_token TEXT NOT NULL UNIQUE,
+    preferred_image_ref TEXT,
+    preferred_image_version TEXT,
     gateway_url TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     volume_prepared_at DATETIME,
@@ -62,6 +64,17 @@ CREATE TABLE IF NOT EXISTS system_settings (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS managed_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_ref TEXT NOT NULL UNIQUE,
+    version TEXT NOT NULL,
+    version_source TEXT NOT NULL DEFAULT 'legacy',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_managed_images_created_at ON managed_images(created_at);
 
 CREATE TABLE IF NOT EXISTS containers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,6 +176,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
         if not _column_exists(conn, "users", "openrouter_api_key2"):
             conn.execute("ALTER TABLE users ADD COLUMN openrouter_api_key2 TEXT")
+        if not _column_exists(conn, "users", "preferred_image_ref"):
+            conn.execute("ALTER TABLE users ADD COLUMN preferred_image_ref TEXT")
+        if not _column_exists(conn, "users", "preferred_image_version"):
+            conn.execute("ALTER TABLE users ADD COLUMN preferred_image_version TEXT")
         if not _column_exists(conn, "users", "gateway_url"):
             conn.execute("ALTER TABLE users ADD COLUMN gateway_url TEXT")
         if not _column_exists(conn, "users", "is_active"):
@@ -175,6 +192,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE users ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP")
 
     _ensure_system_settings_table(conn)
+    _ensure_managed_images_table(conn)
     _ensure_system_settings_row(conn)
     conn.execute(
         """
@@ -263,6 +281,51 @@ def _migrate(conn: sqlite3.Connection) -> None:
             (DEFAULT_CURRENT_IMAGE_VERSION,),
         )
 
+    _backfill_managed_images(conn)
+
+    if _table_exists(conn, "users"):
+        conn.execute(
+            """
+            UPDATE users
+            SET
+                preferred_image_ref = COALESCE(
+                    NULLIF(trim(preferred_image_ref), ''),
+                    (
+                        SELECT COALESCE(
+                            NULLIF(trim(c.image_ref), ''),
+                            NULLIF(trim(i.image), '')
+                        )
+                        FROM containers c
+                        LEFT JOIN instances i ON i.id = c.instance_id
+                        WHERE c.assigned_user_id = users.id
+                        ORDER BY c.updated_at DESC, c.id DESC
+                        LIMIT 1
+                    ),
+                    (SELECT current_image_ref FROM system_settings WHERE id = 1)
+                ),
+                preferred_image_version = COALESCE(
+                    NULLIF(trim(preferred_image_version), ''),
+                    (
+                        SELECT COALESCE(
+                            NULLIF(trim(c.image_version), ''),
+                            NULLIF(trim(i.version), '')
+                        )
+                        FROM containers c
+                        LEFT JOIN instances i ON i.id = c.instance_id
+                        WHERE c.assigned_user_id = users.id
+                        ORDER BY c.updated_at DESC, c.id DESC
+                        LIMIT 1
+                    ),
+                    (SELECT current_image_version FROM system_settings WHERE id = 1)
+                ),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE preferred_image_ref IS NULL
+               OR trim(preferred_image_ref) = ''
+               OR preferred_image_version IS NULL
+               OR trim(preferred_image_version) = ''
+            """
+        )
+
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -272,6 +335,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_allocations_user_id ON container_allocations(user_id);
         CREATE INDEX IF NOT EXISTS idx_allocations_container_id ON container_allocations(container_id);
         CREATE INDEX IF NOT EXISTS idx_allocations_status ON container_allocations(status);
+        CREATE INDEX IF NOT EXISTS idx_managed_images_created_at ON managed_images(created_at);
         """
     )
 
@@ -283,6 +347,21 @@ def _ensure_system_settings_table(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY CHECK (id = 1),
             current_image_ref TEXT NOT NULL,
             current_image_version TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def _ensure_managed_images_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS managed_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_ref TEXT NOT NULL UNIQUE,
+            version TEXT NOT NULL,
+            version_source TEXT NOT NULL DEFAULT 'legacy',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -319,6 +398,71 @@ def _ensure_system_settings_row(conn: sqlite3.Connection) -> None:
         """,
         (DEFAULT_CURRENT_IMAGE_REF, DEFAULT_CURRENT_IMAGE_VERSION),
     )
+
+
+def _backfill_managed_images(conn: sqlite3.Connection) -> None:
+    candidates: list[tuple[str, str, str]] = []
+
+    current = conn.execute(
+        """
+        SELECT current_image_ref, current_image_version
+        FROM system_settings
+        WHERE id = 1
+        """
+    ).fetchone()
+    if current is not None:
+        candidates.append(
+            (
+                str(current["current_image_ref"] or "").strip(),
+                str(current["current_image_version"] or "").strip(),
+                "system",
+            )
+        )
+
+    if _table_exists(conn, "instances"):
+        for row in conn.execute(
+            """
+            SELECT DISTINCT image, version
+            FROM instances
+            WHERE image IS NOT NULL AND trim(image) <> ''
+            """
+        ).fetchall():
+            candidates.append(
+                (
+                    str(row["image"] or "").strip(),
+                    str(row["version"] or "").strip(),
+                    "legacy",
+                )
+            )
+
+    if _table_exists(conn, "containers"):
+        for row in conn.execute(
+            """
+            SELECT DISTINCT image_ref, image_version
+            FROM containers
+            WHERE image_ref IS NOT NULL AND trim(image_ref) <> ''
+            """
+        ).fetchall():
+            candidates.append(
+                (
+                    str(row["image_ref"] or "").strip(),
+                    str(row["image_version"] or "").strip(),
+                    "legacy",
+                )
+            )
+
+    for image_ref, version, version_source in candidates:
+        normalized_ref = image_ref.strip()
+        if not normalized_ref:
+            continue
+        normalized_version = version.strip() or DEFAULT_CURRENT_IMAGE_VERSION
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO managed_images (image_ref, version, version_source)
+            VALUES (?, ?, ?)
+            """,
+            (normalized_ref, normalized_version, version_source),
+        )
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:

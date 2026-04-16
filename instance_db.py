@@ -7,8 +7,8 @@ import sys
 from typing import Any, Dict, Optional
 
 DEFAULT_DB_PATH = os.environ.get("OPENCLAW_DB_PATH", "./openclaw_instances.db")
-DEFAULT_CURRENT_IMAGE_REF = os.environ.get("OPENCLAW_IMAGE", "xenv1-openclaw:latest")
 DEFAULT_CURRENT_IMAGE_VERSION = os.environ.get("OPENCLAW_CURRENT_IMAGE_VERSION", "2026.4.3")
+DEFAULT_CURRENT_IMAGE_REF = os.environ.get("OPENCLAW_IMAGE", f"xen-v{DEFAULT_CURRENT_IMAGE_VERSION}")
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS instances (

@@ -28,7 +28,7 @@ from services.user_service import (
     rollback_user_creation,
     update_user_account_from_form,
 )
-from services.version_service import get_current_image_state, versions_match
+from services.version_service import get_current_image_state, list_available_images, versions_match
 
 web_bp = Blueprint("web", __name__)
 
@@ -50,7 +50,11 @@ def login_page() -> str:
 
 @web_bp.get("/signin")
 def signin_page() -> str:
-    return render_template("signin.html")
+    return render_template(
+        "signin.html",
+        current_image=get_current_image_state(),
+        available_images=list_available_images(),
+    )
 
 
 @web_bp.post("/register")
@@ -94,12 +98,14 @@ def admin_dashboard() -> str:
     users = list_users()
     containers = list_containers()
     current_image = get_current_image_state()
+    available_images = list_available_images()
     image_log_snapshot = get_image_update_log_snapshot()
     return render_template(
         "admin.html",
         users=users,
         containers=containers,
         current_image=current_image,
+        available_images=available_images,
         image_log_snapshot=image_log_snapshot,
         stats={
             "user_count": len(users),
@@ -226,7 +232,7 @@ def start_container_action(container_id: int) -> Response:
 def update_image_action() -> Response:
     try:
         result = rebuild_current_image()
-        flash(f"Image guncellendi. Version: {result['version']}", "success")
+        flash(f"Image guncellendi. Ref: {result['image_ref']} | Version: {result['version']}", "success")
     except Exception as exc:
         _log_web_exception("web-image-update-error", exc)
         flash(safe_user_error(exc), "error")
@@ -291,6 +297,7 @@ def containers_page() -> str:
         "containers.html",
         containers=containers,
         current_image=get_current_image_state(),
+        available_images=list_available_images(),
     )
 
 

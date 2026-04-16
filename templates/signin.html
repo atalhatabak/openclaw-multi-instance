@@ -54,6 +54,17 @@
           <span>OpenRouter API Key</span>
           <input type="password" name="openrouter_api_key" placeholder="or-v1-..." required>
         </label>
+        <label class="field field-wide">
+          <span>Container image</span>
+          <select name="image_ref">
+            {% for image in available_images %}
+              <option value="{{ image.image_ref }}" {% if image.is_current %}selected{% endif %}>
+                {{ image.image_ref }} | OpenClaw {{ image.version }}{% if image.is_current %} | current{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          <small class="field-hint">Yeni container secilen image ile olusturulur. Varsayilan current image: {{ current_image.image_ref }}</small>
+        </label>
         <button class="btn primary" type="submit">Kayit ol</button>
       </form>
     </section>

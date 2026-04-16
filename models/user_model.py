@@ -16,6 +16,8 @@ def create_user(
     openrouter_api_key: str,
     volume_name: str,
     gateway_token: str,
+    preferred_image_ref: str | None = None,
+    preferred_image_version: str | None = None,
     openrouter_api_key2: str | None = None,
     gateway_url: str | None = None,
 ) -> dict[str, Any]:
@@ -32,8 +34,10 @@ def create_user(
                 openrouter_api_key2,
                 volume_name,
                 gateway_token,
+                preferred_image_ref,
+                preferred_image_version,
                 gateway_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 full_name,
@@ -45,6 +49,8 @@ def create_user(
                 openrouter_api_key2,
                 volume_name,
                 gateway_token,
+                preferred_image_ref,
+                preferred_image_version,
                 gateway_url,
             ),
         )

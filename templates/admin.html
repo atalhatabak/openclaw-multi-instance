@@ -8,7 +8,7 @@
       <div>
         <p class="eyebrow">Admin</p>
         <h1>Kullanici ve oturum yonetimi</h1>
-        <p class="muted">Current image {{ current_image.version }} | Kullanicilar, gateway oturumlari ve container atamalari.</p>
+        <p class="muted">Current image {{ current_image.version }} | {{ current_image.image_ref }} | Kullanicilar, gateway oturumlari ve container atamalari.</p>
       </div>
       <nav class="topnav">
         <form
@@ -63,6 +63,27 @@
         <span>Bekleyen update</span>
         <strong>{{ stats.outdated_containers }}</strong>
       </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header compact">
+        <div>
+          <p class="eyebrow">Image Pool</p>
+          <h2>Secilebilir image'lar</h2>
+          <p class="muted">Yeni container olustururken bu listedeki image'lar secilir. Rotate mantigi son 3 image'ı hedefler.</p>
+        </div>
+      </div>
+      <div class="image-catalog-grid">
+        {% for image in available_images %}
+          <article class="image-catalog-card{% if image.is_current %} is-current{% endif %}">
+            <strong>{{ image.image_ref }}</strong>
+            <span>OpenClaw {{ image.version }}</span>
+            <span>{{ 'current default' if image.is_current else (image.created_at or 'arsiv image') }}</span>
+          </article>
+        {% else %}
+          <div class="muted">Henuz kayitli image yok.</div>
+        {% endfor %}
+      </div>
     </section>
 
     <section
@@ -187,9 +208,11 @@
                   {% if user.container_name %}
                     <div>{{ user.container_name }}</div>
                     <div class="meta-text">{{ user.container_host }}:{{ user.container_port }} | {{ user.container_status }}</div>
-                    <div class="meta-text">image {{ current_image.version }} | container {{ user.container_image_version or '-' }}</div>
+                    <div class="meta-text">container {{ user.container_image_version or '-' }} | default {{ current_image.version }}</div>
+                    <div class="meta-text mono">{{ user.container_image_ref or user.preferred_image_ref or '-' }}</div>
                   {% else %}
-                    <span class="muted">-</span>
+                    <div class="muted">-</div>
+                    <div class="meta-text mono">{{ user.preferred_image_ref or current_image.image_ref }}</div>
                   {% endif %}
                 </td>
                 <td>{{ user.created_at }}</td>
@@ -227,8 +250,9 @@
             <tr>
               <th>Name</th>
               <th>Status</th>
-              <th>Image ver</th>
+              <th>Default</th>
               <th>Container ver</th>
+              <th>Image ref</th>
               <th>Host</th>
               <th>Port</th>
               <th>Assigned user</th>
@@ -244,6 +268,7 @@
                 <td><span class="badge">{{ container.status }}</span></td>
                 <td>{{ current_image.version }}</td>
                 <td>{{ container.image_version or '-' }}</td>
+                <td class="mono">{{ container.image_ref or '-' }}</td>
                 <td>{{ container.host }}</td>
                 <td>{{ container.port }}</td>
                 <td>{{ container.assigned_username or '-' }}</td>
@@ -268,7 +293,7 @@
               </tr>
             {% else %}
               <tr>
-                <td colspan="10" class="muted empty-cell">Kayit yok.</td>
+                <td colspan="11" class="muted empty-cell">Kayit yok.</td>
               </tr>
             {% endfor %}
           </tbody>

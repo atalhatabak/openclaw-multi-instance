@@ -27,12 +27,13 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 DOMAIN="${DOMAIN:-}"
 VERSION="${OPENCLAW_CURRENT_IMAGE_VERSION:-2026.4.3}"
+DEFAULT_OPENCLAW_IMAGE="xen-v${VERSION}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TELEGRAM_ALLOW_FROM="${TELEGRAM_ALLOW_FROM:-}"
 OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
 OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-claw}"
 OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
-OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-xenv4-openclaw:latest}"
+OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-$DEFAULT_OPENCLAW_IMAGE}"
 CHANNEL_CHOICE="web"
 
 usage() {
@@ -40,7 +41,7 @@ usage() {
 Usage:
   $0 \
     [--domain mebs.claw] \
-    [--image-ref xenv1-openclaw:latest] \
+    [--image-ref xen-v2026.4.14] \
     [--telegram-bot-token 123456:ABCDEF] \
     [--telegram-allow-from 905551112233] \
     [--openrouter-api-key or-v1-xxxxx] \

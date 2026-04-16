@@ -293,8 +293,14 @@ function setupImageLogViewer() {
           selectedLog.created_at || "",
           snapshot.log_path || "",
         ];
+        if (selectedLog.is_running) {
+          parts.push("canli takip aktif");
+        }
         if (snapshot.truncated) {
           parts.push("tail mode aktif");
+        }
+        if (snapshot.last_updated_at) {
+          parts.push(`son guncelleme ${snapshot.last_updated_at}`);
         }
         meta.textContent = parts.filter(Boolean).join(" | ");
       }
@@ -308,7 +314,7 @@ function setupImageLogViewer() {
     }
 
     updateSubmitButton(snapshot);
-    schedulePoll(selectedLog && selectedLog.is_running);
+    schedulePoll(selectedLog && (selectedLog.is_running || selectedLog.status === "running"));
   };
 
   const fetchSnapshot = async (logId = selectedLogId) => {

@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 REPO_URL="https://github.com/openclaw/openclaw.git"
+EXTERNAL_OPENCLAW_IMAGE="${OPENCLAW_IMAGE-}"
 
 ENV_BASE_FILE="./env.base"
 if [[ -f "$ENV_BASE_FILE" ]]; then
@@ -9,6 +10,10 @@ if [[ -f "$ENV_BASE_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_BASE_FILE"
   set +a
+fi
+
+if [[ -n "${EXTERNAL_OPENCLAW_IMAGE:-}" ]]; then
+  export OPENCLAW_IMAGE="$EXTERNAL_OPENCLAW_IMAGE"
 fi
 
 
@@ -347,6 +352,7 @@ build_image() {
   log "  image      : $OPENCLAW_IMAGE"
 
   DOCKER_BUILDKIT=1 docker build \
+    --progress=plain \
     -t "$OPENCLAW_IMAGE" \
     -f "$DOCKERFILE_PATH" \
     "$source_dir"
