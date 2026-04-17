@@ -120,6 +120,37 @@ normalize_version() {
   echo "$raw"
 }
 
+has_explicit_image_tag() {
+  local ref="${1:-}"
+  [[ -n "$ref" ]] || return 1
+  [[ "$ref" == *"@"* ]] && return 0
+  [[ "${ref##*/}" == *:* ]]
+}
+
+resolve_local_image_ref() {
+  local requested="${1:-}"
+  local candidate=""
+  local candidates=()
+  local image_id=""
+
+  [[ -n "$requested" ]] || return 1
+
+  candidates+=("$requested")
+  if ! has_explicit_image_tag "$requested"; then
+    candidates+=("${requested}:latest")
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    image_id="$(docker image ls --format '{{.ID}}' "$candidate" 2>/dev/null | head -n 1)"
+    if [[ -n "$image_id" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 if [[ -z "$OPENCLAW_GATEWAY_BIND" ]]; then
   OPENCLAW_GATEWAY_BIND="${stored_gateway_bind:-lan}"
 fi
@@ -132,6 +163,9 @@ if [[ -z "$OPENCLAW_IMAGE" ]]; then
   OPENCLAW_IMAGE="$DEFAULT_OPENCLAW_IMAGE"
 fi
 
+OPENCLAW_RUNTIME_IMAGE="$(resolve_local_image_ref "$OPENCLAW_IMAGE")" || \
+  fail "Docker image kullanilabilir degil: $OPENCLAW_IMAGE"
+
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.update.XXXXXX")"
 cleanup() { rm -f "$env_file" || true; }
 trap cleanup EXIT
@@ -142,7 +176,7 @@ OPENCLAW_GATEWAY_TOKEN=$gateway_token
 OPENCLAW_GATEWAY_PORT=$gateway_port
 OPENCLAW_BRIDGE_PORT=$bridge_port
 OPENCLAW_GATEWAY_BIND=$OPENCLAW_GATEWAY_BIND
-OPENCLAW_IMAGE=$OPENCLAW_IMAGE
+OPENCLAW_IMAGE=$OPENCLAW_RUNTIME_IMAGE
 OPENROUTER_API_KEY=$openrouter_token
 EOF
 
@@ -159,9 +193,12 @@ echo "Stopping old services (preserve volume)"
 "${compose_cmd[@]}" down --remove-orphans || true
 
 echo "Starting updated services with image: $OPENCLAW_IMAGE"
+if [[ "$OPENCLAW_RUNTIME_IMAGE" != "$OPENCLAW_IMAGE" ]]; then
+  echo "Resolved runtime image ref: $OPENCLAW_RUNTIME_IMAGE"
+fi
 "${compose_cmd[@]}" up -d --remove-orphans --force-recreate
 
-effective_version="$(docker run --rm "$OPENCLAW_IMAGE" openclaw --version 2>/dev/null | head -n 1 | tr -d '\r')"
+effective_version="$(docker run --rm "$OPENCLAW_RUNTIME_IMAGE" openclaw --version 2>/dev/null | head -n 1 | tr -d '\r')"
 if [[ -z "$effective_version" ]]; then
   effective_version="${TARGET_VERSION:-$current_version}"
 fi

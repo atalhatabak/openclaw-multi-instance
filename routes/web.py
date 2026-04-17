@@ -28,7 +28,7 @@ from services.user_service import (
     rollback_user_creation,
     update_user_account_from_form,
 )
-from services.version_service import get_current_image_state, list_available_images, versions_match
+from services.version_service import get_current_image_state, image_refs_match, list_available_images, versions_match
 
 web_bp = Blueprint("web", __name__)
 
@@ -116,7 +116,11 @@ def admin_dashboard() -> str:
             "outdated_containers": sum(
                 1
                 for container in containers
-                if container.get("id") and not versions_match(container.get("image_version"), current_image.version)
+                if container.get("id")
+                and (
+                    not versions_match(container.get("image_version"), current_image.version)
+                    or not image_refs_match(container.get("image_ref"), current_image.image_ref)
+                )
             ),
         },
     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from db import DEFAULT_CURRENT_IMAGE_REF, DEFAULT_CURRENT_IMAGE_VERSION, get_con
 from models import managed_image_model, system_settings_model
 from services.command_service import AppError, run_cmd_logged
 from services.docker_service import gateway_container_name
+from services.openclaw_release_service import get_target_stable_version
 
 DEFAULT_IMAGE_BASE = os.environ.get("OPENCLAW_IMAGE_BASE", "xen").strip() or "xen"
 VERSION_PATTERN = re.compile(r"\b\d{4}\.\d+\.\d+(?:[-+._][A-Za-z0-9]+)*\b")
@@ -45,6 +47,14 @@ def normalize_version(raw: Optional[str], *, fallback: Optional[str] = None) -> 
 
 def versions_match(left: Optional[str], right: Optional[str]) -> bool:
     return normalize_version(left) == normalize_version(right)
+
+
+def image_refs_match(left: Optional[str], right: Optional[str]) -> bool:
+    left_candidates = set(_image_ref_candidates(left))
+    right_candidates = set(_image_ref_candidates(right))
+    if not left_candidates or not right_candidates:
+        return False
+    return bool(left_candidates & right_candidates)
 
 
 def build_managed_image_ref(version: str) -> str:
@@ -88,12 +98,12 @@ def set_current_image_state(
 
 
 def detect_image_version(image_ref: str) -> str | None:
-    target_image = (image_ref or "").strip()
-    if not target_image:
+    resolved_image = resolve_local_image_ref(image_ref)
+    if not resolved_image:
         return None
     try:
         result = run_cmd_logged(
-            ["docker", "run", "--rm", target_image, "openclaw", "--version"],
+            ["docker", "run", "--rm", resolved_image, "openclaw", "--version"],
             check=False,
             action_type="version",
         )
@@ -113,18 +123,24 @@ def detect_image_version(image_ref: str) -> str | None:
 
 
 def image_exists(image_ref: str) -> bool:
-    target_image = (image_ref or "").strip()
-    if not target_image:
-        return False
-    try:
-        result = run_cmd_logged(
-            ["docker", "image", "inspect", target_image],
-            check=False,
-            action_type="image-inspect",
-        )
-    except Exception:
-        return False
-    return result.ok
+    return resolve_local_image_ref(image_ref) is not None
+
+
+def resolve_local_image_ref(image_ref: str | None) -> str | None:
+    for candidate in _image_ref_candidates(image_ref):
+        try:
+            proc = subprocess.run(
+                ["docker", "image", "ls", "--format", "{{.ID}}", candidate],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError:
+            return None
+        if proc.returncode == 0 and (proc.stdout or "").strip():
+            return candidate
+    return None
 
 
 def detect_repo_version(repo_dir: Path | None = None) -> str | None:
@@ -224,36 +240,12 @@ def resolve_image_state(
 
 
 def plan_next_image_build(now: datetime | None = None) -> PlannedImageBuild:
-    current_time = now or datetime.now()
-    repo_version = detect_repo_version()
-    preferred_tag_version = repo_version or _format_date_version(current_time)
-    existing_refs = {item["image_ref"] for item in list_available_images(limit=64)}
-
-    preferred_ref = build_managed_image_ref(preferred_tag_version)
-    if preferred_ref not in existing_refs:
-        return PlannedImageBuild(
-            image_ref=preferred_ref,
-            requested_version=repo_version or preferred_tag_version,
-            tag_version=preferred_tag_version,
-            version_source="repo" if repo_version else "date",
-        )
-
-    dated_tag_version = _format_date_version(current_time)
-    dated_ref = build_managed_image_ref(dated_tag_version)
-    if dated_ref not in existing_refs:
-        return PlannedImageBuild(
-            image_ref=dated_ref,
-            requested_version=repo_version or dated_tag_version,
-            tag_version=dated_tag_version,
-            version_source="repo" if repo_version else "date",
-        )
-
-    stamped_tag_version = _format_timestamp_version(current_time)
+    target_version = get_target_stable_version(fallback=DEFAULT_CURRENT_IMAGE_VERSION)
     return PlannedImageBuild(
-        image_ref=build_managed_image_ref(stamped_tag_version),
-        requested_version=repo_version or dated_tag_version,
-        tag_version=stamped_tag_version,
-        version_source="repo" if repo_version else "date",
+        image_ref=build_managed_image_ref(target_version),
+        requested_version=target_version,
+        tag_version=target_version,
+        version_source="release-stable",
     )
 
 
@@ -315,6 +307,25 @@ def _infer_version_from_image_ref(image_ref: str) -> str | None:
     if match:
         return normalize_version(match.group(1))
     return None
+
+
+def _image_ref_candidates(image_ref: str | None) -> list[str]:
+    target_ref = (image_ref or "").strip()
+    if not target_ref:
+        return []
+    candidates = [target_ref]
+    if not _has_explicit_image_tag(target_ref):
+        candidates.append(f"{target_ref}:latest")
+    return candidates
+
+
+def _has_explicit_image_tag(image_ref: str) -> bool:
+    ref = (image_ref or "").strip()
+    if not ref:
+        return False
+    if "@" in ref:
+        return True
+    return ":" in ref.rsplit("/", 1)[-1]
 
 
 def _format_date_version(now: datetime) -> str:

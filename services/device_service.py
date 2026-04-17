@@ -10,8 +10,10 @@ from services.docker_service import gateway_container_name
 
 @dataclass
 class Device:
+    request_id: str
     device_id: str
     status: str
+    timestamp_ms: int | None
     raw: str
 
 
@@ -19,6 +21,15 @@ def _safe_str(value: Any) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _safe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _run_openclaw_cli(project_name: str, candidates: list[list[str]], *, instance_id: Optional[int] = None) -> str:
@@ -60,8 +71,10 @@ def list_devices(project_name: str, *, instance_id: Optional[int] = None) -> tup
             continue
         devices.append(
             Device(
+                request_id=req_id,
                 device_id=req_id,
                 status="pending",
+                timestamp_ms=_safe_int(entry.get("ts")),
                 raw=json.dumps(entry, ensure_ascii=False),
             )
         )
@@ -72,8 +85,10 @@ def list_devices(project_name: str, *, instance_id: Optional[int] = None) -> tup
             continue
         devices.append(
             Device(
+                request_id="",
                 device_id=dev_id,
                 status="paired",
+                timestamp_ms=_safe_int(entry.get("approvedAtMs") or entry.get("createdAtMs")),
                 raw=json.dumps(entry, ensure_ascii=False),
             )
         )
@@ -91,9 +106,14 @@ def approve_device(project_name: str, device_id: str, *, instance_id: Optional[i
 
 
 def approve_latest_device(project_name: str, *, instance_id: Optional[int] = None) -> str:
-    candidates: list[list[str]] = [
-        ["openclaw", "devices", "approve", "--latest"],
-        ["/usr/local/bin/openclaw", "devices", "approve", "--latest"],
-    ]
-    out = _run_openclaw_cli(project_name, candidates, instance_id=instance_id)
-    return out or "Latest approve command executed."
+    devices, _ = list_devices(project_name, instance_id=instance_id)
+    pending_requests = [device for device in devices if device.status == "pending" and device.request_id]
+    if not pending_requests:
+        raise AppError("Bekleyen cihaz istegi bulunamadi.")
+
+    selected_request = max(
+        pending_requests,
+        key=lambda device: device.timestamp_ms if device.timestamp_ms is not None else -1,
+    )
+    out = approve_device(project_name, selected_request.request_id, instance_id=instance_id)
+    return out or f"Approved pending request: {selected_request.request_id}"

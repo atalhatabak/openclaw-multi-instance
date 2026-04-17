@@ -132,6 +132,37 @@ image_tagify() {
     | sed 's/-$//'
 }
 
+has_explicit_image_tag() {
+  local ref="${1:-}"
+  [[ -n "$ref" ]] || return 1
+  [[ "$ref" == *"@"* ]] && return 0
+  [[ "${ref##*/}" == *:* ]]
+}
+
+resolve_local_image_ref() {
+  local requested="${1:-}"
+  local candidate=""
+  local candidates=()
+  local image_id=""
+
+  [[ -n "$requested" ]] || return 1
+
+  candidates+=("$requested")
+  if ! has_explicit_image_tag "$requested"; then
+    candidates+=("${requested}:latest")
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    image_id="$(docker image ls --format '{{.ID}}' "$candidate" 2>/dev/null | head -n 1)"
+    if [[ -n "$image_id" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 random_token() {
   if have openssl; then
     openssl rand -hex 24
@@ -152,6 +183,7 @@ volume_name=""
 gateway_port=""
 bridge_port=""
 compose_cmd=()
+OPENCLAW_RUNTIME_IMAGE=""
 
 cleanup() {
   local exit_code=$?
@@ -197,13 +229,28 @@ fi
 
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.XXXXXX")"
 
+: "${OPENCLAW_HOME_VOLUME:?missing}"
+: "${OPENCLAW_GATEWAY_PORT:?missing}"
+: "${OPENCLAW_BRIDGE_PORT:?missing}"
+: "${OPENCLAW_GATEWAY_BIND:?missing}"
+: "${OPENCLAW_IMAGE:?missing}"
+: "${OPENROUTER_API_KEY:?missing}"
+
+OPENCLAW_RUNTIME_IMAGE="$(resolve_local_image_ref "$OPENCLAW_IMAGE")" || \
+  fail "Docker image aktif Docker context'inde bulunamadi: $OPENCLAW_IMAGE. Once clone_patch_build.sh ile image hazirla."
+
+echo "Using prebuilt OpenClaw image: $OPENCLAW_IMAGE"
+if [[ "$OPENCLAW_RUNTIME_IMAGE" != "$OPENCLAW_IMAGE" ]]; then
+  echo "Resolved runtime image ref: $OPENCLAW_RUNTIME_IMAGE"
+fi
+
 cat > "$env_file" <<EOF
 OPENCLAW_HOME_VOLUME=$volume_name
 OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN
 OPENCLAW_GATEWAY_PORT=$gateway_port
 OPENCLAW_BRIDGE_PORT=$bridge_port
 OPENCLAW_GATEWAY_BIND=$OPENCLAW_GATEWAY_BIND
-OPENCLAW_IMAGE=$OPENCLAW_IMAGE
+OPENCLAW_IMAGE=$OPENCLAW_RUNTIME_IMAGE
 OPENROUTER_API_KEY=$OPENROUTER_API_KEY
 DOMAIN=$DOMAIN
 EOF
@@ -215,18 +262,6 @@ TELEGRAM_ALLOW_FROM=$TELEGRAM_ALLOW_FROM
 EOF
   CHANNEL_CHOICE="telegram"
 fi
-
-: "${OPENCLAW_HOME_VOLUME:?missing}"
-: "${OPENCLAW_GATEWAY_PORT:?missing}"
-: "${OPENCLAW_BRIDGE_PORT:?missing}"
-: "${OPENCLAW_GATEWAY_BIND:?missing}"
-: "${OPENCLAW_IMAGE:?missing}"
-: "${OPENROUTER_API_KEY:?missing}"
-
-docker image inspect "$OPENCLAW_IMAGE" >/dev/null 2>&1 || \
-  fail "Docker image bulunamadi: $OPENCLAW_IMAGE. Once clone_and_patch_source_code.sh ile image hazirla."
-
-echo "Using prebuilt OpenClaw image: $OPENCLAW_IMAGE"
 
 docker volume inspect "$OPENCLAW_HOME_VOLUME" >/dev/null 2>&1 || {
   docker volume create "$OPENCLAW_HOME_VOLUME" >/dev/null

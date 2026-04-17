@@ -22,6 +22,7 @@ from services.log_service import (
 from services.version_service import (
     detect_image_version,
     get_current_image_state,
+    image_refs_match,
     image_exists,
     normalize_version,
     plan_next_image_build,
@@ -280,7 +281,11 @@ def update_container_to_current_image(container_id: int) -> dict[str, Any]:
         container.get("image_version"),
         fallback=instance.get("version") if instance.get("version") else "",
     )
-    if versions_match(container_version, current_image.version):
+    container_image_ref = str(container.get("image_ref") or instance.get("image") or "").strip()
+    if versions_match(container_version, current_image.version) and image_refs_match(
+        container_image_ref,
+        current_image.image_ref,
+    ):
         return {
             "updated": False,
             "container": container,

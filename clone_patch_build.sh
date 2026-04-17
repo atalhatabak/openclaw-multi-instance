@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 REPO_URL="https://github.com/openclaw/openclaw.git"
 EXTERNAL_OPENCLAW_IMAGE="${OPENCLAW_IMAGE-}"
+EXTERNAL_OPENCLAW_TARGET_VERSION="${OPENCLAW_TARGET_VERSION-}"
 
 ENV_BASE_FILE="./env.base"
 if [[ -f "$ENV_BASE_FILE" ]]; then
@@ -16,14 +17,18 @@ if [[ -n "${EXTERNAL_OPENCLAW_IMAGE:-}" ]]; then
   export OPENCLAW_IMAGE="$EXTERNAL_OPENCLAW_IMAGE"
 fi
 
+if [[ -n "${EXTERNAL_OPENCLAW_TARGET_VERSION:-}" ]]; then
+  export OPENCLAW_TARGET_VERSION="$EXTERNAL_OPENCLAW_TARGET_VERSION"
+fi
+
 
 TARGET_DIR="openclaw"
 TARGET_FILE="ui/src/ui/storage.ts"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile"
+WORKTREE_DIR=""
 
 OVERLAY_SOURCE_DIR="$ROOT_DIR/scripts/docker"
-OVERLAY_TARGET_DIR="$ROOT_DIR/$TARGET_DIR/scripts/docker"
 
 log() {
   printf '[INFO] %s\n' "$1"
@@ -48,19 +53,53 @@ require_cmd git
 require_cmd python3
 require_cmd docker
 
+cleanup() {
+  if [[ -n "${WORKTREE_DIR:-}" ]]; then
+    git -C "$ROOT_DIR/$TARGET_DIR" worktree remove --force "$WORKTREE_DIR" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+resolve_target_version() {
+  python3 - <<'PY'
+from services.openclaw_release_service import get_target_stable_version
+
+print(get_target_stable_version())
+PY
+}
+
+prepare_repo_tags() {
+  log "Release tag bilgileri aliniyor..."
+  git -C "$ROOT_DIR/$TARGET_DIR" fetch --force --tags origin
+}
+
+create_release_worktree() {
+  local target_version="$1"
+  local tag_ref="refs/tags/v${target_version}"
+  local temp_dir
+
+  temp_dir="$(mktemp -d "$ROOT_DIR/.openclaw-build.XXXXXX")"
+  rmdir "$temp_dir"
+  git -C "$ROOT_DIR/$TARGET_DIR" worktree add --detach "$temp_dir" "$tag_ref" >/dev/null
+  printf '%s\n' "$temp_dir"
+}
+
 sync_overlay_files() {
+  local repo_dir="$1"
+  local overlay_target_dir="$repo_dir/scripts/docker"
+
   if [ ! -d "$OVERLAY_SOURCE_DIR" ]; then
     err "Overlay klasoru bulunamadi: $OVERLAY_SOURCE_DIR"
     exit 1
   fi
 
-  mkdir -p "$OVERLAY_TARGET_DIR"
+  mkdir -p "$overlay_target_dir"
 
-  cp "$OVERLAY_SOURCE_DIR/build-image-template.sh" "$OVERLAY_TARGET_DIR/build-image-template.sh"
-  cp "$OVERLAY_SOURCE_DIR/init-image-home.sh" "$OVERLAY_TARGET_DIR/init-image-home.sh"
-  chmod 755 "$OVERLAY_TARGET_DIR/build-image-template.sh" "$OVERLAY_TARGET_DIR/init-image-home.sh"
+  cp "$OVERLAY_SOURCE_DIR/build-image-template.sh" "$overlay_target_dir/build-image-template.sh"
+  cp "$OVERLAY_SOURCE_DIR/init-image-home.sh" "$overlay_target_dir/init-image-home.sh"
+  chmod 755 "$overlay_target_dir/build-image-template.sh" "$overlay_target_dir/init-image-home.sh"
 
-  log "Docker helper scriptleri sync edildi: $OVERLAY_TARGET_DIR"
+  log "Docker helper scriptleri sync edildi: $overlay_target_dir"
 }
 
 clone_if_needed() {
@@ -364,27 +403,34 @@ detect_image_version() {
 
 
 main() {
-  clone_if_needed
+  local target_version=""
 
-  cd "$TARGET_DIR"
-  # pull_safely
-  patch_file "$TARGET_FILE"
-  patch_bundled_channel_entries "$PWD"
-  cd "$ROOT_DIR"
-  sync_overlay_files
-  cd "$TARGET_DIR"
-  build_image "$PWD"
+  clone_if_needed
+  prepare_repo_tags
+
+  target_version="$(resolve_target_version)"
+  [[ -n "$target_version" ]] || {
+    err "Stabil OpenClaw versiyonu belirlenemedi."
+    exit 1
+  }
+
+  log "Stabil release secildi: $target_version"
+  WORKTREE_DIR="$(create_release_worktree "$target_version")"
+
+  patch_file "$WORKTREE_DIR/$TARGET_FILE"
+  patch_bundled_channel_entries "$WORKTREE_DIR"
+  sync_overlay_files "$WORKTREE_DIR"
+  build_image "$WORKTREE_DIR"
   built_version="$(detect_image_version || true)"
 
   log "Tamamlandı."
   if [ -n "${built_version:-}" ]; then
     log "  version    : $built_version"
   fi
+  log "  release    : $target_version"
   log "Kontrol için:"
-  log "  cd $TARGET_DIR"
-  log "  git diff -- $TARGET_FILE"
+  log "  git -C $TARGET_DIR show v$target_version --stat --oneline -1"
   log "  docker image inspect $OPENCLAW_IMAGE"
-  log "  git status"
 }
 
 main "$@"
