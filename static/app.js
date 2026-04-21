@@ -365,6 +365,18 @@ function setupImageLogViewer() {
           "X-Requested-With": "fetch",
         },
       });
+      if (payload.started === false && payload.message) {
+        await fetchSnapshot(selectedLogId);
+        if (meta) {
+          meta.textContent = payload.message;
+        }
+        if (statusBadge) {
+          statusBadge.textContent = payload.already_current ? "up-to-date" : statusBadge.textContent;
+          statusBadge.classList.add("ok");
+          statusBadge.classList.remove("warn");
+        }
+        return;
+      }
       selectedLogId = payload.log_id ? `${payload.log_id}` : selectedLogId;
       panel.scrollIntoView({ behavior: "smooth", block: "start" });
       await fetchSnapshot(selectedLogId);

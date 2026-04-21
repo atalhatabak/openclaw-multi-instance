@@ -236,7 +236,14 @@ def start_container_action(container_id: int) -> Response:
 def update_image_action() -> Response:
     try:
         result = rebuild_current_image()
-        flash(f"Image guncellendi. Ref: {result['image_ref']} | Version: {result['version']}", "success")
+        if result.get("updated", True):
+            flash(f"Image guncellendi. Ref: {result['image_ref']} | Version: {result['version']}", "success")
+        else:
+            flash(
+                result.get("message")
+                or f"Image zaten guncel. Ref: {result['image_ref']} | Version: {result['version']}",
+                "success",
+            )
     except Exception as exc:
         _log_web_exception("web-image-update-error", exc)
         flash(safe_user_error(exc), "error")

@@ -39,6 +39,26 @@ IMAGE_UPDATE_ACTION = "image-update"
 _IMAGE_UPDATE_START_LOCK = threading.Lock()
 
 
+def _resolve_noop_image_build(build_plan: Any) -> dict[str, Any] | None:
+    existing_version = detect_image_version(build_plan.image_ref)
+    if not versions_match(existing_version, build_plan.requested_version):
+        return None
+
+    effective_version = normalize_version(existing_version, fallback=build_plan.requested_version)
+    updated_image = set_current_image_state(
+        image_ref=build_plan.image_ref,
+        version=effective_version,
+        version_source=build_plan.version_source,
+    )
+    return {
+        "image_ref": updated_image.image_ref,
+        "version": updated_image.version,
+        "updated": False,
+        "skipped": True,
+        "message": f"Image zaten guncel. Ref: {updated_image.image_ref} | Version: {updated_image.version}",
+    }
+
+
 def delete_user_stack(user_id: int) -> None:
     user = user_model.get_user_by_id(user_id)
     if user is None:
@@ -91,6 +111,9 @@ def rebuild_current_image() -> dict[str, Any]:
     if _get_running_image_update_job() is not None:
         raise AppError("Image guncelleme zaten calisiyor. Canli log panelinden takip edebilirsin.")
     build_plan = plan_next_image_build()
+    noop_result = _resolve_noop_image_build(build_plan)
+    if noop_result is not None:
+        return noop_result
     env = os.environ.copy()
     env["OPENCLAW_IMAGE"] = build_plan.image_ref
     result = run_cmd_logged(
@@ -115,6 +138,8 @@ def rebuild_current_image() -> dict[str, Any]:
     return {
         "image_ref": updated_image.image_ref,
         "version": updated_image.version,
+        "updated": True,
+        "skipped": False,
         "log_file_path": result.log_file_path,
     }
 
@@ -131,6 +156,14 @@ def start_current_image_rebuild() -> dict[str, Any]:
             }
 
         build_plan = plan_next_image_build()
+        noop_result = _resolve_noop_image_build(build_plan)
+        if noop_result is not None:
+            return {
+                "started": False,
+                "already_running": False,
+                "already_current": True,
+                **noop_result,
+            }
         env = os.environ.copy()
         env["OPENCLAW_IMAGE"] = build_plan.image_ref
 
@@ -304,6 +337,7 @@ def update_container_to_current_image(container_id: int) -> dict[str, Any]:
             "--image-ref",
             current_image.image_ref,
         ],
+        env={**os.environ, "OPENCLAW_SKIP_SELF_LOG": "1"},
         check=True,
         instance_id=int(instance["id"]),
         action_type="container-update",

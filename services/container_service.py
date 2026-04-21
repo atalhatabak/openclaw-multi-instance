@@ -95,6 +95,7 @@ def provision_container_for_user(user: dict[str, Any]) -> dict[str, Any]:
                 "--image-ref",
                 selected_image.image_ref,
             ],
+            env={**os.environ, "OPENCLAW_SKIP_SELF_LOG": "1"},
             check=True,
             action_type="deploy-user-container",
         )

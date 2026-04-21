@@ -8,6 +8,28 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
+resolve_env_file_from_args() {
+  local prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "--env-file" ]]; then
+      printf '%s\n' "$arg"
+      return 0
+    fi
+    case "$arg" in
+      --env-file=*)
+        printf '%s\n' "${arg#*=}"
+        return 0
+        ;;
+    esac
+    prev="$arg"
+  done
+  return 1
+}
+
+if resolved_env_file="$(resolve_env_file_from_args "$@" 2>/dev/null)"; then
+  ENV_BASE_FILE="$resolved_env_file"
+fi
+
 if [[ -f "$ENV_BASE_FILE" ]]; then
   set -a
   # shellcheck disable=SC1090
@@ -15,15 +37,14 @@ if [[ -f "$ENV_BASE_FILE" ]]; then
   set +a
 fi
 
-COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
+COMPOSE_FILE="${OPENCLAW_COMPOSE_FILE:-$ROOT_DIR/docker-compose.yml}"
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
+MANUAL_OPS_HELPER="$ROOT_DIR/scripts/manual_operation_state.py"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 LOCK_FILE="${OPENCLAW_LOCK_FILE:-$ROOT_DIR/.openclaw_deploy.lock}"
 
 LOG_DIR="${OPENCLAW_LOG_DIR:-$ROOT_DIR/logs/deploy}"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_deploy.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
+LOG_FILE=""
 
 DOMAIN="${DOMAIN:-}"
 VERSION="${OPENCLAW_CURRENT_IMAGE_VERSION:-2026.4.3}"
@@ -39,15 +60,23 @@ CHANNEL_CHOICE="web"
 usage() {
   cat <<EOF
 Usage:
-  $0 \
-    [--domain mebs.claw] \
-    [--image-ref xen-v2026.4.14] \
-    [--telegram-bot-token 123456:ABCDEF] \
-    [--telegram-allow-from 905551112233] \
-    [--openrouter-api-key or-v1-xxxxx] \
-    [--gateway-token my-token] \
-    [--version latest] \
-    [--gateway-bind lan]
+  $0 [options]
+
+Options:
+  --domain VALUE
+  --image-ref VALUE
+  --telegram-bot-token VALUE
+  --telegram-allow-from VALUE
+  --openrouter-api-key VALUE
+  --gateway-token VALUE
+  --version VALUE
+  --gateway-bind VALUE
+  --env-file PATH
+  --db-path PATH
+  --log-dir PATH
+  --lock-file PATH
+  --compose-file PATH
+  -h, --help
 
 Notes:
   - Varsayilanlar env.base dosyasindan okunur.
@@ -92,6 +121,30 @@ while [[ $# -gt 0 ]]; do
       OPENCLAW_GATEWAY_BIND="$2"
       shift 2
       ;;
+    --env-file)
+      ENV_BASE_FILE="$2"
+      shift 2
+      ;;
+    --env-file=*)
+      ENV_BASE_FILE="${1#*=}"
+      shift
+      ;;
+    --db-path)
+      DB_PATH="$2"
+      shift 2
+      ;;
+    --log-dir)
+      LOG_DIR="$2"
+      shift 2
+      ;;
+    --lock-file)
+      LOCK_FILE="$2"
+      shift 2
+      ;;
+    --compose-file)
+      COMPOSE_FILE="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -111,6 +164,10 @@ have python3 || fail "python3 is not installed"
 [[ -f "$COMPOSE_FILE" ]] || fail "docker-compose.yml not found in $ROOT_DIR"
 [[ -f "$PY_DB_SCRIPT" ]] || fail "instance_db.py not found in $ROOT_DIR"
 # have flock || fail "flock is not installed"
+
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_deploy.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 python3 "$PY_DB_SCRIPT" --db "$DB_PATH" init >/dev/null
 
@@ -178,12 +235,32 @@ cleanup_needed=1
 env_file=""
 volume_created=0
 compose_started=0
+instance_created=0
+manual_instance_id=""
+manual_log_status="error"
 project_name=""
 volume_name=""
 gateway_port=""
 bridge_port=""
 compose_cmd=()
 OPENCLAW_RUNTIME_IMAGE=""
+
+record_manual_operation_log() {
+  if [[ "${OPENCLAW_SKIP_SELF_LOG:-}" == "1" ]]; then
+    return 0
+  fi
+  [[ -n "$LOG_FILE" ]] || return 0
+  local cmd=(
+    python3 "$MANUAL_OPS_HELPER" record-log
+    --action-type manual-deploy
+    --log-file-path "$LOG_FILE"
+    --status "$manual_log_status"
+  )
+  if [[ -n "$manual_instance_id" ]]; then
+    cmd+=(--instance-id "$manual_instance_id")
+  fi
+  OPENCLAW_DB_PATH="$DB_PATH" "${cmd[@]}" >/dev/null 2>&1 || true
+}
 
 cleanup() {
   local exit_code=$?
@@ -201,8 +278,19 @@ cleanup() {
     if [[ -n "$env_file" && -f "$env_file" ]]; then
       rm -f "$env_file" || true
     fi
+
+    if [[ "$instance_created" -eq 1 && -n "$manual_instance_id" ]]; then
+      OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" purge-instance-records --instance-id "$manual_instance_id" >/dev/null 2>&1 || true
+      manual_instance_id=""
+    fi
   fi
 
+  if [[ "$exit_code" -eq 0 ]]; then
+    manual_log_status="success"
+  else
+    manual_log_status="error"
+  fi
+  record_manual_operation_log
   exit "$exit_code"
 }
 trap cleanup EXIT
@@ -297,7 +385,7 @@ compose_started=1
 
 # docker exec -i "$gateway_container_name" openclaw browser start
 
-python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
+INSTANCE_ADD_JSON="$(python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
   --domain "$instance_key" \
   --domain-short "$domain_slug" \
   --project-name "$project_name" \
@@ -311,12 +399,15 @@ python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
   --allow-from "${TELEGRAM_ALLOW_FROM:-}" \
   --token "$OPENCLAW_GATEWAY_TOKEN" \
   --openrouter-token "$OPENROUTER_API_KEY" \
-  --image "$OPENCLAW_IMAGE" >/dev/null
+  --image "$OPENCLAW_IMAGE")"
+manual_instance_id="$(printf '%s' "$INSTANCE_ADD_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["instance"]["id"])')"
+instance_created=1
+
+OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" sync-instance-container --instance-id "$manual_instance_id" >/dev/null
 
 rm -f "$env_file"
 env_file=""
 cleanup_needed=0
-trap - EXIT
 
 echo "Created instance successfully"
 echo "  domain  : $DOMAIN"

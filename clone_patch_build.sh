@@ -1,11 +1,34 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/openclaw/openclaw.git"
 EXTERNAL_OPENCLAW_IMAGE="${OPENCLAW_IMAGE-}"
 EXTERNAL_OPENCLAW_TARGET_VERSION="${OPENCLAW_TARGET_VERSION-}"
+ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
 
-ENV_BASE_FILE="./env.base"
+resolve_env_file_from_args() {
+  local prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "--env-file" ]]; then
+      printf '%s\n' "$arg"
+      return 0
+    fi
+    case "$arg" in
+      --env-file=*)
+        printf '%s\n' "${arg#*=}"
+        return 0
+        ;;
+    esac
+    prev="$arg"
+  done
+  return 1
+}
+
+if resolved_env_file="$(resolve_env_file_from_args "$@" 2>/dev/null)"; then
+  ENV_BASE_FILE="$resolved_env_file"
+fi
+
 if [[ -f "$ENV_BASE_FILE" ]]; then
   set -a
   # shellcheck disable=SC1090
@@ -22,13 +45,12 @@ if [[ -n "${EXTERNAL_OPENCLAW_TARGET_VERSION:-}" ]]; then
 fi
 
 
-TARGET_DIR="openclaw"
-TARGET_FILE="ui/src/ui/storage.ts"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOCKERFILE_PATH="$ROOT_DIR/Dockerfile"
+TARGET_DIR="${OPENCLAW_SOURCE_DIR:-openclaw}"
+TARGET_FILE="${OPENCLAW_TARGET_FILE:-ui/src/ui/storage.ts}"
+DOCKERFILE_PATH="${OPENCLAW_DOCKERFILE:-$ROOT_DIR/Dockerfile}"
 WORKTREE_DIR=""
 
-OVERLAY_SOURCE_DIR="$ROOT_DIR/scripts/docker"
+OVERLAY_SOURCE_DIR="${OPENCLAW_OVERLAY_SOURCE_DIR:-$ROOT_DIR/scripts/docker}"
 
 log() {
   printf '[INFO] %s\n' "$1"
@@ -41,6 +63,99 @@ warn() {
 err() {
   printf '[ERROR] %s\n' "$1" >&2
 }
+
+usage() {
+  cat <<EOF
+Usage:
+  $0 [options]
+
+Clone/update the upstream OpenClaw repo, apply local patches, and build a Docker image.
+
+Options:
+  --image-ref VALUE         Target Docker image ref. Defaults to OPENCLAW_IMAGE
+  --target-version VALUE    Build a specific OpenClaw version tag
+  --repo-url URL            Upstream git repo URL. Default: ${REPO_URL}
+  --target-dir DIR          Local upstream checkout directory. Default: ${TARGET_DIR}
+  --target-file PATH        File patched by the storage override patch. Default: ${TARGET_FILE}
+  --dockerfile PATH         Dockerfile used for the build. Default: ${DOCKERFILE_PATH}
+  --overlay-source-dir DIR  Directory containing helper overlay scripts. Default: ${OVERLAY_SOURCE_DIR}
+  --env-file PATH           Load defaults from a specific env file
+  --force-rebuild           Build even if the target image/version already exists locally
+  --no-force-rebuild        Disable forced rebuild
+  -h, --help                Show this help
+
+Examples:
+  $0 --image-ref xen-v2026.4.15 --target-version 2026.4.15
+  $0 --env-file ./env.base --force-rebuild
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --image-ref|--image)
+        export OPENCLAW_IMAGE="$2"
+        shift 2
+        ;;
+      --target-version|--version)
+        export OPENCLAW_TARGET_VERSION="$2"
+        shift 2
+        ;;
+      --repo-url)
+        REPO_URL="$2"
+        shift 2
+        ;;
+      --target-dir)
+        TARGET_DIR="$2"
+        shift 2
+        ;;
+      --target-file)
+        TARGET_FILE="$2"
+        shift 2
+        ;;
+      --dockerfile)
+        DOCKERFILE_PATH="$2"
+        shift 2
+        ;;
+      --overlay-source-dir)
+        OVERLAY_SOURCE_DIR="$2"
+        shift 2
+        ;;
+      --env-file)
+        ENV_BASE_FILE="$2"
+        shift 2
+        ;;
+      --env-file=*)
+        ENV_BASE_FILE="${1#*=}"
+        shift
+        ;;
+      --force-rebuild)
+        export OPENCLAW_FORCE_REBUILD=1
+        shift
+        ;;
+      --no-force-rebuild)
+        export OPENCLAW_FORCE_REBUILD=0
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -*)
+        err "Unknown option: $1"
+        usage >&2
+        exit 1
+        ;;
+      *)
+        err "Unexpected argument: $1"
+        usage >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+parse_args "$@"
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -59,6 +174,80 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+normalize_version() {
+  local raw="${1:-}"
+  if [[ "$raw" =~ ([0-9]{4}\.[0-9]+\.[0-9]+([-+._][A-Za-z0-9]+)*) ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  printf '%s\n' "$raw"
+}
+
+has_explicit_image_tag() {
+  local ref="${1:-}"
+  [[ -n "$ref" ]] || return 1
+  [[ "$ref" == *"@"* ]] && return 0
+  [[ "${ref##*/}" == *:* ]]
+}
+
+resolve_local_image_ref() {
+  local requested="${1:-}"
+  local candidate=""
+  local candidates=()
+  local image_id=""
+
+  [[ -n "$requested" ]] || return 1
+
+  candidates+=("$requested")
+  if ! has_explicit_image_tag "$requested"; then
+    candidates+=("${requested}:latest")
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    image_id="$(docker image ls --format '{{.ID}}' "$candidate" 2>/dev/null | head -n 1)"
+    if [[ -n "$image_id" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+detect_image_version_for_ref() {
+  local image_ref="${1:-}"
+  docker run --rm "$image_ref" openclaw --version 2>/dev/null | head -n 1 | tr -d '\r'
+}
+
+should_skip_build() {
+  local target_version="$1"
+  local normalized_target_version=""
+  local existing_image_ref=""
+  local existing_version=""
+  local force_rebuild="${OPENCLAW_FORCE_REBUILD:-}"
+
+  if [[ -n "$force_rebuild" && "$force_rebuild" != "0" && "${force_rebuild,,}" != "false" ]]; then
+    log "OPENCLAW_FORCE_REBUILD etkin, mevcut image olsa bile rebuild zorlanacak."
+    return 1
+  fi
+
+  existing_image_ref="$(resolve_local_image_ref "$OPENCLAW_IMAGE" || true)"
+  if [[ -z "$existing_image_ref" ]]; then
+    return 1
+  fi
+
+  normalized_target_version="$(normalize_version "$target_version")"
+  existing_version="$(normalize_version "$(detect_image_version_for_ref "$existing_image_ref" || true)")"
+
+  if [[ -n "$existing_version" && "$existing_version" == "$normalized_target_version" ]]; then
+    log "Hedef image zaten mevcut ve guncel: $existing_image_ref ($existing_version)"
+    log "Rebuild atlandi. Zorlamak istersen OPENCLAW_FORCE_REBUILD=1 kullan."
+    return 0
+  fi
+
+  return 1
+}
 
 resolve_target_version() {
   python3 - <<'PY'
@@ -404,6 +593,8 @@ detect_image_version() {
 
 main() {
   local target_version=""
+  local resolved_image_ref=""
+  local built_version=""
 
   clone_if_needed
   prepare_repo_tags
@@ -414,7 +605,28 @@ main() {
     exit 1
   }
 
+  if [[ -z "${OPENCLAW_IMAGE:-}" ]]; then
+    export OPENCLAW_IMAGE="xen-v${target_version}"
+    log "OPENCLAW_IMAGE tanimli degildi, varsayilan image ref secildi: $OPENCLAW_IMAGE"
+  fi
+
   log "Stabil release secildi: $target_version"
+  if should_skip_build "$target_version"; then
+    resolved_image_ref="$(resolve_local_image_ref "$OPENCLAW_IMAGE" || true)"
+    if [[ -n "$resolved_image_ref" ]]; then
+      built_version="$(detect_image_version_for_ref "$resolved_image_ref" || true)"
+    fi
+
+    log "Tamamlandı."
+    if [ -n "${built_version:-}" ]; then
+      log "  version    : $built_version"
+    fi
+    log "  release    : $target_version"
+    log "Kontrol için:"
+    log "  docker image inspect $OPENCLAW_IMAGE"
+    return 0
+  fi
+
   WORKTREE_DIR="$(create_release_worktree "$target_version")"
 
   patch_file "$WORKTREE_DIR/$TARGET_FILE"

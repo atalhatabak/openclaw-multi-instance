@@ -8,6 +8,28 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
+resolve_env_file_from_args() {
+  local prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "--env-file" ]]; then
+      printf '%s\n' "$arg"
+      return 0
+    fi
+    case "$arg" in
+      --env-file=*)
+        printf '%s\n' "${arg#*=}"
+        return 0
+        ;;
+    esac
+    prev="$arg"
+  done
+  return 1
+}
+
+if resolved_env_file="$(resolve_env_file_from_args "$@" 2>/dev/null)"; then
+  ENV_BASE_FILE="$resolved_env_file"
+fi
+
 if [[ -f "$ENV_BASE_FILE" ]]; then
   set -a
   # shellcheck disable=SC1090
@@ -16,24 +38,33 @@ if [[ -f "$ENV_BASE_FILE" ]]; then
 fi
 
 PY_DB_SCRIPT="$ROOT_DIR/instance_db.py"
+MANUAL_OPS_HELPER="$ROOT_DIR/scripts/manual_operation_state.py"
 DB_PATH="${OPENCLAW_DB_PATH:-$ROOT_DIR/openclaw_instances.db}"
 DEFAULT_OPENCLAW_VERSION="${OPENCLAW_CURRENT_IMAGE_VERSION:-2026.4.3}"
 DEFAULT_OPENCLAW_IMAGE="xen-v${DEFAULT_OPENCLAW_VERSION}"
 
 LOG_DIR="${OPENCLAW_LOG_DIR:-$ROOT_DIR/logs/update}"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_update.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
+LOG_FILE=""
 
 INSTANCE_ID=""
 TARGET_VERSION=""
 OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-}"
 OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-}"
+manual_log_status="error"
 
 usage() {
   cat <<EOF
 Usage:
-  $0 --instance-id <id> [--version <version>] [--image-ref <image>] [--gateway-bind lan|local]
+  $0 --instance-id <id> [options]
+
+Options:
+  --version VALUE
+  --image-ref VALUE
+  --gateway-bind lan|local
+  --env-file PATH
+  --db-path PATH
+  --log-dir PATH
+  -h, --help
 
 Notes:
   - Varsayilanlari env.base dosyasindan okur.
@@ -60,6 +91,22 @@ while [[ $# -gt 0 ]]; do
       OPENCLAW_GATEWAY_BIND="$2"
       shift 2
       ;;
+    --env-file)
+      ENV_BASE_FILE="$2"
+      shift 2
+      ;;
+    --env-file=*)
+      ENV_BASE_FILE="${1#*=}"
+      shift
+      ;;
+    --db-path)
+      DB_PATH="$2"
+      shift 2
+      ;;
+    --log-dir)
+      LOG_DIR="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -76,6 +123,10 @@ have docker || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
 have python3 || fail "python3 is not installed"
 [[ -f "$PY_DB_SCRIPT" ]] || fail "instance_db.py not found in $ROOT_DIR"
+
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_update.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 INSTANCE_JSON="$(python3 "$PY_DB_SCRIPT" --db "$DB_PATH" get --id "$INSTANCE_ID")"
 
@@ -167,7 +218,29 @@ OPENCLAW_RUNTIME_IMAGE="$(resolve_local_image_ref "$OPENCLAW_IMAGE")" || \
   fail "Docker image kullanilabilir degil: $OPENCLAW_IMAGE"
 
 env_file="$(mktemp "$ROOT_DIR/.env.openclaw.update.XXXXXX")"
-cleanup() { rm -f "$env_file" || true; }
+record_manual_operation_log() {
+  if [[ "${OPENCLAW_SKIP_SELF_LOG:-}" == "1" ]]; then
+    return 0
+  fi
+  [[ -n "$LOG_FILE" ]] || return 0
+  OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" record-log \
+    --action-type manual-update \
+    --log-file-path "$LOG_FILE" \
+    --status "$manual_log_status" \
+    --instance-id "$INSTANCE_ID" >/dev/null 2>&1 || true
+}
+
+cleanup() {
+  local exit_code=$?
+  rm -f "$env_file" || true
+  if [[ "$exit_code" -eq 0 ]]; then
+    manual_log_status="success"
+  else
+    manual_log_status="error"
+  fi
+  record_manual_operation_log
+  exit "$exit_code"
+}
 trap cleanup EXIT
 
 cat > "$env_file" <<EOF
@@ -208,6 +281,7 @@ python3 "$PY_DB_SCRIPT" --db "$DB_PATH" update_runtime \
   --id "$INSTANCE_ID" \
   --version "$effective_version" \
   --image "$OPENCLAW_IMAGE" >/dev/null
+OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" sync-instance-container --instance-id "$INSTANCE_ID" >/dev/null
 
 echo "Update completed"
 echo "  project : $project_name"

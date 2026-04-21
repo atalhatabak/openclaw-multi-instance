@@ -29,6 +29,21 @@ def get_container_by_id(container_id: int) -> dict[str, Any] | None:
     return row_to_dict(row)
 
 
+def get_container_by_instance_id(instance_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM containers
+            WHERE instance_id = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (instance_id,),
+        ).fetchone()
+    return row_to_dict(row)
+
+
 def delete_container(container_id: int) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM container_allocations WHERE container_id = ?", (container_id,))
