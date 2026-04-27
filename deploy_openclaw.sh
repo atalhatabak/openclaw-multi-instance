@@ -3,6 +3,22 @@ set -euo pipefail
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+resolve_python_bin() {
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    have "$PYTHON_BIN" || fail "$PYTHON_BIN is not installed"
+    printf '%s\n' "$PYTHON_BIN"
+    return 0
+  fi
+  if have python3; then
+    printf '%s\n' "python3"
+    return 0
+  fi
+  if have python; then
+    printf '%s\n' "python"
+    return 0
+  fi
+  fail "python3 or python is not installed"
+}
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
@@ -160,7 +176,7 @@ done
 
 have docker || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
-have python3 || fail "python3 is not installed"
+PYTHON_BIN="$(resolve_python_bin)"
 [[ -f "$COMPOSE_FILE" ]] || fail "docker-compose.yml not found in $ROOT_DIR"
 [[ -f "$PY_DB_SCRIPT" ]] || fail "instance_db.py not found in $ROOT_DIR"
 # have flock || fail "flock is not installed"
@@ -169,7 +185,7 @@ mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_deploy.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-python3 "$PY_DB_SCRIPT" --db "$DB_PATH" init >/dev/null
+"$PYTHON_BIN" "$PY_DB_SCRIPT" --db "$DB_PATH" init >/dev/null
 
 slugify() {
   echo "$1" \
@@ -224,7 +240,7 @@ random_token() {
   if have openssl; then
     openssl rand -hex 24
   else
-    python3 - <<'PY'
+    "$PYTHON_BIN" - <<'PY'
 import secrets
 print(secrets.token_hex(24))
 PY
@@ -251,7 +267,7 @@ record_manual_operation_log() {
   fi
   [[ -n "$LOG_FILE" ]] || return 0
   local cmd=(
-    python3 "$MANUAL_OPS_HELPER" record-log
+    "$PYTHON_BIN" "$MANUAL_OPS_HELPER" record-log
     --action-type manual-deploy
     --log-file-path "$LOG_FILE"
     --status "$manual_log_status"
@@ -280,7 +296,7 @@ cleanup() {
     fi
 
     if [[ "$instance_created" -eq 1 && -n "$manual_instance_id" ]]; then
-      OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" purge-instance-records --instance-id "$manual_instance_id" >/dev/null 2>&1 || true
+      OPENCLAW_DB_PATH="$DB_PATH" "$PYTHON_BIN" "$MANUAL_OPS_HELPER" purge-instance-records --instance-id "$manual_instance_id" >/dev/null 2>&1 || true
       manual_instance_id=""
     fi
   fi
@@ -298,9 +314,9 @@ trap cleanup EXIT
 # exec 9>"$LOCK_FILE"
 # flock -x 9
 
-PORTS_JSON="$(python3 "$PY_DB_SCRIPT" --db "$DB_PATH" available_port --base-gateway 20000 --step 2)"
-gateway_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["gateway_port"])')"
-bridge_port="$(echo "$PORTS_JSON" | python3 -c 'import sys, json; print(json.load(sys.stdin)["bridge_port"])')"
+PORTS_JSON="$("$PYTHON_BIN" "$PY_DB_SCRIPT" --db "$DB_PATH" available_port --base-gateway 20000 --step 2)"
+gateway_port="$(echo "$PORTS_JSON" | "$PYTHON_BIN" -c 'import sys, json; print(json.load(sys.stdin)["gateway_port"])')"
+bridge_port="$(echo "$PORTS_JSON" | "$PYTHON_BIN" -c 'import sys, json; print(json.load(sys.stdin)["bridge_port"])')"
 
 domain_slug="$(slugify "$DOMAIN")"
 instance_key="${DOMAIN}--${gateway_port}"
@@ -385,7 +401,7 @@ compose_started=1
 
 # docker exec -i "$gateway_container_name" openclaw browser start
 
-INSTANCE_ADD_JSON="$(python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
+INSTANCE_ADD_JSON="$("$PYTHON_BIN" "$PY_DB_SCRIPT" --db "$DB_PATH" add \
   --domain "$instance_key" \
   --domain-short "$domain_slug" \
   --project-name "$project_name" \
@@ -400,10 +416,10 @@ INSTANCE_ADD_JSON="$(python3 "$PY_DB_SCRIPT" --db "$DB_PATH" add \
   --token "$OPENCLAW_GATEWAY_TOKEN" \
   --openrouter-token "$OPENROUTER_API_KEY" \
   --image "$OPENCLAW_IMAGE")"
-manual_instance_id="$(printf '%s' "$INSTANCE_ADD_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["instance"]["id"])')"
+manual_instance_id="$(printf '%s' "$INSTANCE_ADD_JSON" | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["instance"]["id"])')"
 instance_created=1
 
-OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" sync-instance-container --instance-id "$manual_instance_id" >/dev/null
+OPENCLAW_DB_PATH="$DB_PATH" "$PYTHON_BIN" "$MANUAL_OPS_HELPER" sync-instance-container --instance-id "$manual_instance_id" >/dev/null
 
 rm -f "$env_file"
 env_file=""

@@ -10,6 +10,7 @@ from models.user_model import get_user_by_id, list_users
 from services.admin_service import (
     delete_user_stack,
     get_image_update_log_snapshot,
+    image_update_async_enabled,
     rebuild_current_image,
     start_current_image_rebuild,
     start_container,
@@ -107,6 +108,7 @@ def admin_dashboard() -> str:
         current_image=current_image,
         available_images=available_images,
         image_log_snapshot=image_log_snapshot,
+        image_update_async_enabled=image_update_async_enabled(),
         stats={
             "user_count": len(users),
             "active_users": sum(1 for user in users if user.get("is_active")),

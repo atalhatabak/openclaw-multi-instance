@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -42,15 +41,23 @@ def run_cmd_logged(
 ) -> CommandResult:
     # Force UTF-8 with replacement so box-drawing and colored output from
     # docker / openclaw CLI do not crash decoding on Windows consoles.
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd or BASE_DIR),
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd or BASE_DIR),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except FileNotFoundError as exc:
+        joined = " ".join(cmd)
+        program = cmd[0] if cmd else "(bos komut)"
+        hint = ""
+        if program == "bash":
+            hint = " Windows'ta Git Bash kurulu ve PATH icinde olmali."
+        raise AppError(f"Komut bulunamadi: {program}.{hint} Komut: {joined}") from exc
 
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
@@ -95,4 +102,3 @@ def run_cmd_logged(
             f"Komut başarısız: {joined}\nLog: {result.log_file_path}"
         )
     return result
-

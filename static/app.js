@@ -365,6 +365,14 @@ function setupImageLogViewer() {
           "X-Requested-With": "fetch",
         },
       });
+      if (payload.log_id) {
+        selectedLogId = `${payload.log_id}`;
+      }
+      if (payload.completed === true) {
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        await fetchSnapshot(selectedLogId);
+        return;
+      }
       if (payload.started === false && payload.message) {
         await fetchSnapshot(selectedLogId);
         if (meta) {
@@ -377,7 +385,6 @@ function setupImageLogViewer() {
         }
         return;
       }
-      selectedLogId = payload.log_id ? `${payload.log_id}` : selectedLogId;
       panel.scrollIntoView({ behavior: "smooth", block: "start" });
       await fetchSnapshot(selectedLogId);
     } catch (err) {

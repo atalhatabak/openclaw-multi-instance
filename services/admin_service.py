@@ -144,7 +144,17 @@ def rebuild_current_image() -> dict[str, Any]:
     }
 
 
+def image_update_async_enabled() -> bool:
+    configured = os.environ.get("OPENCLAW_IMAGE_UPDATE_ASYNC")
+    if configured is not None:
+        return configured.strip().lower() not in {"0", "false", "no", "off"}
+    return os.name != "nt"
+
+
 def start_current_image_rebuild() -> dict[str, Any]:
+    if not image_update_async_enabled():
+        return _run_image_rebuild_inline()
+
     with _IMAGE_UPDATE_START_LOCK:
         running_job = _get_running_image_update_job()
         if running_job is not None:
@@ -198,6 +208,16 @@ def start_current_image_rebuild() -> dict[str, Any]:
             raise AppError(f"Image log dosyasi hazirlanamadi. Log: {log_path}") from exc
 
         try:
+            popen_options: dict[str, Any] = {
+                "cwd": str(ROOT_DIR),
+                "env": env,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if os.name == "nt":
+                popen_options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            else:
+                popen_options["start_new_session"] = True
             runner = subprocess.Popen(
                 [
                     sys.executable,
@@ -215,11 +235,7 @@ def start_current_image_rebuild() -> dict[str, Any]:
                     "--pid-path",
                     str(pid_path),
                 ],
-                cwd=str(ROOT_DIR),
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                **popen_options,
             )
             pid_path.write_text(f"{runner.pid}\n", encoding="ascii")
         except Exception as exc:
@@ -234,6 +250,40 @@ def start_current_image_rebuild() -> dict[str, Any]:
             "log_id": int(operation_log["id"]),
             "log_file_path": str(log_path),
         }
+
+
+def _run_image_rebuild_inline() -> dict[str, Any]:
+    result = rebuild_current_image()
+    log_id = _find_operation_log_id_by_path(result.get("log_file_path"))
+    message = result.get("message")
+    if not message and result.get("updated", False):
+        message = f"Image guncellendi. Ref: {result['image_ref']} | Version: {result['version']}"
+
+    return {
+        "started": False,
+        "already_running": False,
+        "completed": bool(result.get("updated", False)),
+        "already_current": bool(result.get("skipped", False)),
+        "log_id": log_id,
+        **result,
+        "message": message,
+    }
+
+
+def _find_operation_log_id_by_path(log_file_path: object) -> int | None:
+    if not log_file_path:
+        return None
+
+    target = Path(str(log_file_path)).expanduser().resolve(strict=False)
+    for entry in operation_log_model.list_operation_logs(action_type=IMAGE_UPDATE_ACTION, limit=24):
+        raw_path = str(entry.get("log_file_path") or "")
+        if not raw_path:
+            continue
+        resolved = resolve_managed_log_path(raw_path)
+        candidate = resolved or Path(raw_path).expanduser().resolve(strict=False)
+        if candidate == target:
+            return int(entry["id"])
+    return None
 
 
 def list_recent_image_update_logs(*, limit: int = 8) -> list[dict[str, Any]]:
@@ -428,11 +478,50 @@ def _read_pid_file(pid_path: Path) -> int | None:
 
 
 def _process_is_alive(pid: int) -> bool:
+    if os.name == "nt":
+        return _windows_process_is_alive(pid)
+
     try:
         os.kill(pid, 0)
     except OSError:
         return False
     return True
+
+
+def _windows_process_is_alive(pid: int) -> bool:
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return False
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    process_query_limited_information = 0x1000
+    synchronize = 0x00100000
+    still_active = 259
+
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(
+        process_query_limited_information | synchronize,
+        False,
+        pid,
+    )
+    if not handle:
+        return False
+
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _safe_unlink(path: Path) -> None:

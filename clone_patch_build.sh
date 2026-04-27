@@ -180,8 +180,26 @@ require_cmd() {
   }
 }
 
+resolve_python_bin() {
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    require_cmd "$PYTHON_BIN"
+    printf '%s\n' "$PYTHON_BIN"
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' "python3"
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    printf '%s\n' "python"
+    return 0
+  fi
+  err "'python3' veya 'python' komutu bulunamadı."
+  exit 1
+}
+
 require_cmd git
-require_cmd python3
+PYTHON_BIN="$(resolve_python_bin)"
 require_cmd docker
 
 cleanup() {
@@ -284,7 +302,7 @@ should_skip_build() {
 }
 
 resolve_target_version() {
-  python3 - <<'PY'
+  "$PYTHON_BIN" - <<'PY'
 from services.openclaw_release_service import get_target_stable_version
 
 print(get_target_stable_version())
@@ -294,7 +312,7 @@ PY
 detect_repo_version_from_dir() {
   local repo_dir="$1"
 
-  python3 - "$repo_dir" <<'PY'
+  "$PYTHON_BIN" - "$repo_dir" <<'PY'
 import json
 import re
 import sys
@@ -425,7 +443,7 @@ patch_file() {
     exit 1
   fi
 
-  python3 - "$file" <<'PY'
+  "$PYTHON_BIN" - "$file" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -557,7 +575,7 @@ PY
 patch_bundled_channel_entries() {
   local repo_dir="$1"
 
-  python3 - "$repo_dir" <<'PY'
+  "$PYTHON_BIN" - "$repo_dir" <<'PY'
 from pathlib import Path
 import sys
 
@@ -664,7 +682,7 @@ register_managed_image() {
   [[ -n "$image_ref" ]] || return 1
   [[ -n "$image_version" ]] || return 1
 
-  python3 - "$image_ref" "$image_version" "$version_source" <<'PY'
+  "$PYTHON_BIN" - "$image_ref" "$image_version" "$version_source" <<'PY'
 import sys
 
 import db

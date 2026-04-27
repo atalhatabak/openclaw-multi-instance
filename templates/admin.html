@@ -15,7 +15,9 @@
           method="post"
           action="{{ url_for('web.update_image_action') }}"
           data-image-update-form="1"
+          {% if image_update_async_enabled %}
           data-async-url="{{ url_for('web.start_image_update_action') }}"
+          {% endif %}
           onsubmit="return confirm('Image yeniden build edilip current image version guncellensin mi?')"
         >
           <button class="btn primary" type="submit">

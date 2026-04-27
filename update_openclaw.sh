@@ -3,6 +3,22 @@ set -euo pipefail
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+resolve_python_bin() {
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    have "$PYTHON_BIN" || fail "$PYTHON_BIN is not installed"
+    printf '%s\n' "$PYTHON_BIN"
+    return 0
+  fi
+  if have python3; then
+    printf '%s\n' "python3"
+    return 0
+  fi
+  if have python; then
+    printf '%s\n' "python"
+    return 0
+  fi
+  fail "python3 or python is not installed"
+}
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
@@ -121,18 +137,18 @@ done
 
 have docker || fail "docker is not installed"
 docker compose version >/dev/null 2>&1 || fail "docker compose is not available"
-have python3 || fail "python3 is not installed"
+PYTHON_BIN="$(resolve_python_bin)"
 [[ -f "$PY_DB_SCRIPT" ]] || fail "instance_db.py not found in $ROOT_DIR"
 
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)_update.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-INSTANCE_JSON="$(python3 "$PY_DB_SCRIPT" --db "$DB_PATH" get --id "$INSTANCE_ID")"
+INSTANCE_JSON="$("$PYTHON_BIN" "$PY_DB_SCRIPT" --db "$DB_PATH" get --id "$INSTANCE_ID")"
 
 getj() {
   local key="$1"
-  echo "$INSTANCE_JSON" | python3 -c "import sys, json; d=json.load(sys.stdin).get('instance', {}); print(d.get('$key',''))"
+  echo "$INSTANCE_JSON" | "$PYTHON_BIN" -c "import sys, json; d=json.load(sys.stdin).get('instance', {}); print(d.get('$key',''))"
 }
 
 project_name="$(getj project_name)"
@@ -223,7 +239,7 @@ record_manual_operation_log() {
     return 0
   fi
   [[ -n "$LOG_FILE" ]] || return 0
-  OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" record-log \
+  OPENCLAW_DB_PATH="$DB_PATH" "$PYTHON_BIN" "$MANUAL_OPS_HELPER" record-log \
     --action-type manual-update \
     --log-file-path "$LOG_FILE" \
     --status "$manual_log_status" \
@@ -277,11 +293,11 @@ if [[ -z "$effective_version" ]]; then
 fi
 effective_version="$(normalize_version "$effective_version")"
 
-python3 "$PY_DB_SCRIPT" --db "$DB_PATH" update_runtime \
+"$PYTHON_BIN" "$PY_DB_SCRIPT" --db "$DB_PATH" update_runtime \
   --id "$INSTANCE_ID" \
   --version "$effective_version" \
   --image "$OPENCLAW_IMAGE" >/dev/null
-OPENCLAW_DB_PATH="$DB_PATH" python3 "$MANUAL_OPS_HELPER" sync-instance-container --instance-id "$INSTANCE_ID" >/dev/null
+OPENCLAW_DB_PATH="$DB_PATH" "$PYTHON_BIN" "$MANUAL_OPS_HELPER" sync-instance-container --instance-id "$INSTANCE_ID" >/dev/null
 
 echo "Update completed"
 echo "  project : $project_name"
