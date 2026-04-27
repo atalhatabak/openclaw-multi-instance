@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/openclaw/openclaw.git"
 EXTERNAL_OPENCLAW_IMAGE="${OPENCLAW_IMAGE-}"
 EXTERNAL_OPENCLAW_TARGET_VERSION="${OPENCLAW_TARGET_VERSION-}"
+EXTERNAL_OPENCLAW_SOURCE_MODE="${OPENCLAW_SOURCE_MODE-}"
 ENV_BASE_FILE="${OPENCLAW_ENV_BASE_FILE:-$ROOT_DIR/env.base}"
 
 resolve_env_file_from_args() {
@@ -44,6 +45,10 @@ if [[ -n "${EXTERNAL_OPENCLAW_TARGET_VERSION:-}" ]]; then
   export OPENCLAW_TARGET_VERSION="$EXTERNAL_OPENCLAW_TARGET_VERSION"
 fi
 
+if [[ -n "${EXTERNAL_OPENCLAW_SOURCE_MODE:-}" ]]; then
+  export OPENCLAW_SOURCE_MODE="$EXTERNAL_OPENCLAW_SOURCE_MODE"
+fi
+
 
 TARGET_DIR="${OPENCLAW_SOURCE_DIR:-openclaw}"
 TARGET_FILE="${OPENCLAW_TARGET_FILE:-ui/src/ui/storage.ts}"
@@ -73,6 +78,8 @@ Clone/update the upstream OpenClaw repo, apply local patches, and build a Docker
 
 Options:
   --image-ref VALUE         Target Docker image ref. Defaults to OPENCLAW_IMAGE
+  --source-mode MODE        Source selection: stable|main. Default: stable
+  --main                    Shortcut for --source-mode main
   --target-version VALUE    Build a specific OpenClaw version tag
   --repo-url URL            Upstream git repo URL. Default: ${REPO_URL}
   --target-dir DIR          Local upstream checkout directory. Default: ${TARGET_DIR}
@@ -86,6 +93,7 @@ Options:
 
 Examples:
   $0 --image-ref xen-v2026.4.15 --target-version 2026.4.15
+  $0 --source-mode main --image-ref xen-main
   $0 --env-file ./env.base --force-rebuild
 EOF
 }
@@ -96,6 +104,14 @@ parse_args() {
       --image-ref|--image)
         export OPENCLAW_IMAGE="$2"
         shift 2
+        ;;
+      --source-mode)
+        export OPENCLAW_SOURCE_MODE="$2"
+        shift 2
+        ;;
+      --main)
+        export OPENCLAW_SOURCE_MODE="main"
+        shift
         ;;
       --target-version|--version)
         export OPENCLAW_TARGET_VERSION="$2"
@@ -184,6 +200,24 @@ normalize_version() {
   printf '%s\n' "$raw"
 }
 
+resolve_source_mode() {
+  local raw="${OPENCLAW_SOURCE_MODE:-stable}"
+  local normalized="${raw,,}"
+
+  case "$normalized" in
+    stable|release)
+      printf '%s\n' "stable"
+      ;;
+    main)
+      printf '%s\n' "main"
+      ;;
+    *)
+      err "Gecersiz source mode: $raw. Beklenen: stable veya main"
+      exit 1
+      ;;
+  esac
+}
+
 has_explicit_image_tag() {
   local ref="${1:-}"
   [[ -n "$ref" ]] || return 1
@@ -257,20 +291,52 @@ print(get_target_stable_version())
 PY
 }
 
-prepare_repo_tags() {
-  log "Release tag bilgileri aliniyor..."
+detect_repo_version_from_dir() {
+  local repo_dir="$1"
+
+  python3 - "$repo_dir" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+version_pattern = re.compile(r"\b\d{4}\.\d+\.\d+(?:[-+._][A-Za-z0-9]+)*\b")
+package_json = Path(sys.argv[1]) / "package.json"
+
+try:
+    payload = json.loads(package_json.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    print("")
+    raise SystemExit(0)
+
+raw = str(payload.get("version") or "").strip()
+match = version_pattern.search(raw)
+print(match.group(0) if match else raw)
+PY
+}
+
+prepare_repo_refs() {
+  log "Remote branch ve release tag bilgileri aliniyor..."
   git -C "$ROOT_DIR/$TARGET_DIR" fetch --force --tags origin
 }
 
-create_release_worktree() {
-  local target_version="$1"
-  local tag_ref="refs/tags/v${target_version}"
+create_ref_worktree() {
+  local source_ref="$1"
   local temp_dir
 
   temp_dir="$(mktemp -d "$ROOT_DIR/.openclaw-build.XXXXXX")"
   rmdir "$temp_dir"
-  git -C "$ROOT_DIR/$TARGET_DIR" worktree add --detach "$temp_dir" "$tag_ref" >/dev/null
+  git -C "$ROOT_DIR/$TARGET_DIR" worktree add --detach "$temp_dir" "$source_ref" >/dev/null
   printf '%s\n' "$temp_dir"
+}
+
+create_release_worktree() {
+  local target_version="$1"
+  create_ref_worktree "refs/tags/v${target_version}"
+}
+
+create_main_worktree() {
+  create_ref_worktree "refs/remotes/origin/main"
 }
 
 sync_overlay_files() {
@@ -590,58 +656,132 @@ detect_image_version() {
   docker run --rm "$OPENCLAW_IMAGE" openclaw --version 2>/dev/null | head -n 1 | tr -d '\r'
 }
 
+register_managed_image() {
+  local image_ref="$1"
+  local image_version="$2"
+  local version_source="$3"
+
+  [[ -n "$image_ref" ]] || return 1
+  [[ -n "$image_version" ]] || return 1
+
+  python3 - "$image_ref" "$image_version" "$version_source" <<'PY'
+import sys
+
+import db
+from models import managed_image_model
+
+image_ref = sys.argv[1].strip()
+image_version = sys.argv[2].strip()
+version_source = sys.argv[3].strip() or "manual"
+
+db.init_db()
+managed_image_model.upsert_managed_image(
+    image_ref=image_ref,
+    version=image_version,
+    version_source=version_source,
+)
+PY
+}
+
 
 main() {
+  local source_mode=""
   local target_version=""
+  local source_ref_label=""
+  local source_commit=""
   local resolved_image_ref=""
   local built_version=""
+  local managed_version=""
+  local managed_version_source=""
 
   clone_if_needed
-  prepare_repo_tags
+  prepare_repo_refs
+  source_mode="$(resolve_source_mode)"
 
-  target_version="$(resolve_target_version)"
-  [[ -n "$target_version" ]] || {
-    err "Stabil OpenClaw versiyonu belirlenemedi."
-    exit 1
-  }
+  case "$source_mode" in
+    stable)
+      target_version="$(resolve_target_version)"
+      [[ -n "$target_version" ]] || {
+        err "Stabil OpenClaw versiyonu belirlenemedi."
+        exit 1
+      }
+      source_ref_label="v${target_version}"
 
-  if [[ -z "${OPENCLAW_IMAGE:-}" ]]; then
-    export OPENCLAW_IMAGE="xen-v${target_version}"
-    log "OPENCLAW_IMAGE tanimli degildi, varsayilan image ref secildi: $OPENCLAW_IMAGE"
-  fi
+      if [[ -z "${OPENCLAW_IMAGE:-}" ]]; then
+        export OPENCLAW_IMAGE="xen-v${target_version}"
+        log "OPENCLAW_IMAGE tanimli degildi, varsayilan image ref secildi: $OPENCLAW_IMAGE"
+      fi
 
-  log "Stabil release secildi: $target_version"
-  if should_skip_build "$target_version"; then
-    resolved_image_ref="$(resolve_local_image_ref "$OPENCLAW_IMAGE" || true)"
-    if [[ -n "$resolved_image_ref" ]]; then
-      built_version="$(detect_image_version_for_ref "$resolved_image_ref" || true)"
-    fi
+      log "Stabil release secildi: $target_version"
+      if should_skip_build "$target_version"; then
+        resolved_image_ref="$(resolve_local_image_ref "$OPENCLAW_IMAGE" || true)"
+        if [[ -n "$resolved_image_ref" ]]; then
+          built_version="$(detect_image_version_for_ref "$resolved_image_ref" || true)"
+        fi
+        managed_version="$(normalize_version "${built_version:-$target_version}")"
+        managed_version_source="release-stable"
+        if register_managed_image "$OPENCLAW_IMAGE" "$managed_version" "$managed_version_source"; then
+          log "Image kaydi DB'ye yazildi: $OPENCLAW_IMAGE | $managed_version | $managed_version_source"
+        fi
 
-    log "Tamamlandı."
-    if [ -n "${built_version:-}" ]; then
-      log "  version    : $built_version"
-    fi
-    log "  release    : $target_version"
-    log "Kontrol için:"
-    log "  docker image inspect $OPENCLAW_IMAGE"
-    return 0
-  fi
+        log "Tamamlandı."
+        if [ -n "${built_version:-}" ]; then
+          log "  version    : $built_version"
+        fi
+        log "  source     : stable ($source_ref_label)"
+        log "Kontrol için:"
+        log "  docker image inspect $OPENCLAW_IMAGE"
+        return 0
+      fi
 
-  WORKTREE_DIR="$(create_release_worktree "$target_version")"
+      WORKTREE_DIR="$(create_release_worktree "$target_version")"
+      ;;
+    main)
+      if [[ -n "${OPENCLAW_TARGET_VERSION:-}" ]]; then
+        warn "OPENCLAW_TARGET_VERSION main modunda yok sayiliyor."
+      fi
+
+      WORKTREE_DIR="$(create_main_worktree)"
+      source_commit="$(git -C "$WORKTREE_DIR" rev-parse HEAD)"
+      source_ref_label="origin/main@${source_commit:0:12}"
+      target_version="$(detect_repo_version_from_dir "$WORKTREE_DIR")"
+      [[ -n "$target_version" ]] || target_version="main-${source_commit:0:12}"
+
+      if [[ -z "${OPENCLAW_IMAGE:-}" ]]; then
+        export OPENCLAW_IMAGE="xen-main-${source_commit:0:12}"
+        log "OPENCLAW_IMAGE tanimli degildi, varsayilan main image ref secildi: $OPENCLAW_IMAGE"
+      fi
+
+      log "Main branch secildi: $source_ref_label"
+      log "Main modunda surum ayni kalsa bile commit degisebilecegi icin rebuild atlanmayacak."
+      ;;
+  esac
 
   patch_file "$WORKTREE_DIR/$TARGET_FILE"
   patch_bundled_channel_entries "$WORKTREE_DIR"
   sync_overlay_files "$WORKTREE_DIR"
   build_image "$WORKTREE_DIR"
   built_version="$(detect_image_version || true)"
+  managed_version="$(normalize_version "${built_version:-$target_version}")"
+  managed_version_source="release-stable"
+  if [[ "$source_mode" == "main" ]]; then
+    managed_version_source="main"
+  fi
+  if register_managed_image "$OPENCLAW_IMAGE" "$managed_version" "$managed_version_source"; then
+    log "Image kaydi DB'ye yazildi: $OPENCLAW_IMAGE | $managed_version | $managed_version_source"
+  fi
 
   log "Tamamlandı."
   if [ -n "${built_version:-}" ]; then
     log "  version    : $built_version"
   fi
-  log "  release    : $target_version"
+  log "  source     : $source_mode ($source_ref_label)"
   log "Kontrol için:"
-  log "  git -C $TARGET_DIR show v$target_version --stat --oneline -1"
+  if [[ "$source_mode" == "stable" ]]; then
+    log "  git -C $TARGET_DIR show v$target_version --stat --oneline -1"
+  else
+    log "  git -C $TARGET_DIR log origin/main -1 --oneline"
+  fi
   log "  docker image inspect $OPENCLAW_IMAGE"
 }
 

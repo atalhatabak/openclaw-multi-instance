@@ -1,139 +1,96 @@
 # OpenClaw Multi Instance
 
-Tek bir sunucu üzerinde birden fazla OpenClaw oturumu oluşturmak, bunları kullanıcı bazlı yönetmek ve web arayüzünden erişilebilir hale getirmek için hazırlanmış hafif bir yönetim uygulaması.
+Bu repo, birden fazla OpenClaw instance'ını tek yerden build etmek, dağıtmak, güncellemek ve takip etmek için hazırlanmış hafif bir yönetim katmanıdır.
 
-Bu proje, OpenClaw container kurulumunu arka planda otomatikleştirir. Admin paneli üzerinden kullanıcı oluşturulduğunda ilgili container hazırlanır, gerekli volume ve port eşleşmeleri tanımlanır, ardından kullanıcı kendi oturumuna yönlendirilir.
+## Nedir?
 
-![download (1)](https://github.com/user-attachments/assets/d662d965-391b-436c-a2e8-50408b5c9717)
-
-
-
-## Ne İşe Yarar?
-
-- Birden fazla OpenClaw instance'ını aynı makinede çalıştırmayı kolaylaştırır
-- Kullanıcı bazlı container açılış ve atama sürecini otomatikleştirir
-- Web arayüzü üzerinden login, kullanıcı oluşturma ve oturum başlatma akışı sunar
-- Docker, volume ve port yönetimini arka planda standartlaştırır
-- Her kullanıcı için izole bir çalışma alanı mantığı sağlar
+Proje; Docker üzerinde çalışan OpenClaw gateway container'larını toplu veya tekil şekilde yönetmeyi kolaylaştırır. Bash scriptleri ile image build edilir, yeni instance açılır, mevcut instance güncellenir ve temel kayıtlar SQLite içinde tutulur.
 
 ## Nasıl Çalışır?
 
-Sistemin temel akışı şöyledir:
+Akış basittir:
 
-1. Admin panelinden yeni bir kullanıcı oluşturulur.
-2. Sistem bu kullanıcı için bir gateway token ve kalıcı volume tanımlar.
-3. Eğer uygun OpenClaw instance'ı yoksa `deploy_openclaw.sh` scripti yeni instance kurar.
-4. Docker Compose ile ilgili OpenClaw gateway container'ı ayağa kaldırılır.
-5. Instance bilgileri SQLite veritabanına kaydedilir.
-6. Kullanıcı giriş yaptığında kendisine atanmış container bulunur veya yeniden hazırlanır.
-7. Kullanıcı otomatik olarak kendi OpenClaw oturumuna yönlendirilir.
+1. Upstream OpenClaw kaynak kodu alınır ve gerekirse yerel patch uygulanır.
+2. Docker image build edilir.
+3. Her instance için ayrı container, volume ve port çifti oluşturulur.
+4. Instance bilgileri SQLite veritabanına kaydedilir.
+5. İhtiyaç olduğunda aynı kayıtlar üzerinden update ve yönetim işlemleri yapılır.
 
-Özetle bu repo, OpenClaw kurulumunu doğrudan son kullanıcıya bırakmak yerine, bunu merkezi bir panel ve otomasyon katmanı ile yönetir.
+## Mimari Özeti
 
-## Öne Çıkan Özellikler
+- `clone_patch_build.sh`: OpenClaw repo'sunu hazırlar ve Docker image üretir.
+- `deploy_openclaw.sh`: Yeni bir OpenClaw instance'ı ayağa kaldırır.
+- `update_openclaw.sh`: Var olan instance'ı yeni image ile yeniden oluşturur.
+- `auto_deploy.sh`: Birden fazla instance'ı toplu kurar.
+- `docker-compose.yml`: Gateway servisinin container tanımını içerir.
+- `openclaw_instances.db`: Instance, image ve işlem kayıtlarını tutar.
+- `app.py` ve `routes/`, `services/`: İsteğe bağlı web/yönetim katmanı.
 
-- Flask tabanlı basit yönetim paneli
-- Kullanıcı kaydı ve giriş akışı
-- Kullanıcıya özel container tahsisi
-- Container başlatma, durdurma ve silme işlemleri
-- Docker volume ile kalıcı kullanıcı verisi
-- SQLite ile hafif metadata saklama
-- OpenClaw gateway yönlendirme akışı
-- İsteğe bağlı Telegram yapılandırma desteği
+## Bağımlılıklar
 
-## Kullanım Senaryosu
+Temel kullanım için gerekenler:
 
-Bu proje özellikle şu tür senaryolarda faydalıdır:
+- Docker
+- Git
+- Bash
 
-- Birden fazla kullanıcıya ayrı OpenClaw ortamı vermek istediğinizde
-- Tek tek shell komutlarıyla kurulum yapmak istemediğinizde
-- Aynı sunucuda düzenli ve tekrar edilebilir OpenClaw dağıtımı yapmak istediğinizde
-- Kullanıcı, container ve erişim akışını tek yerden yönetmek istediğinizde
+Windows tarafında komutları **Git Bash** ile çalıştırabilirsiniz.
 
-## Kullanılan Yapı
-
-Proje birkaç basit parçadan oluşur:
-
-- `Flask`: web arayüzü ve yönetim akışı
-- `SQLite`: kullanıcı, instance ve container kayıtları
-- `Docker Compose`: OpenClaw servislerini çalıştırma
-- `Bash scriptleri`: kurulum, güncelleme ve yardımcı otomasyonlar
-- `HTML/CSS/JS`: sade admin ve kullanıcı arayüzü
+Not: Repo içinde Python tabanlı yönetim kodu da vardır; ancak günlük kurulum ve operasyon akışı esas olarak Bash scriptleri ve Docker üzerinden ilerler.
 
 ## Kurulum
 
-### Gereksinimler
-
-- Python 3
-- Docker
-- Docker Compose
-- Bash uyumlu bir ortam
-
-### Başlangıç
+Projeyi klonlayın:
 
 ```bash
-git clone https://github.com/atalhatabak/openclaw-multi-instance.git
+git clone <repo-url>
 cd openclaw-multi-instance
-cp env.example env.base
-python app.py
 ```
 
-Uygulama varsayılan olarak `http://127.0.0.1:5050` adresinde açılır.
+`env.base` dosyasındaki en az şu alanları doldurmanız yeterlidir:
 
-## Yapılandırma
+```dotenv
+DOMAIN=ornek-domain
+OPENCLAW_GATEWAY_BIND=lan
 
-Temel ayarlar `env.base` dosyasından okunur.
+```
 
-Genelde düzenlenen alanlar:
+## Kullanım
 
-- `OPENCLAW_IMAGE`: kullanılacak OpenClaw Docker image'ı
-- `DOMAIN`: sistemin temel domain bilgisi
-- `OPENCLAW_GATEWAY_BIND`: gateway erişim tipi
-- `OPENROUTER_API_KEY`: varsayılan API anahtarı
-- `TELEGRAM_BOT_TOKEN`: opsiyonel Telegram bot bilgisi
-- `TELEGRAM_ALLOW_FROM`: Telegram erişim izni
+Önce image build edin:
 
-Bu dosya üzerinden genel davranış belirlenir; kullanıcı bazlı değerler ise uygulama akışı sırasında veritabanı ve otomasyon scriptleri ile yönetilir.
+```bash
+bash clone_patch_build.sh
+```
 
-## Arayüzler
+Tek bir instance kurun:
 
-### Kullanıcı Girişi
+```bash
+bash deploy_openclaw.sh --domain bot1 --openrouter-api-key YOUR_API_KEY
+```
 
-Ana sayfa kullanıcı giriş ekranıdır. Kullanıcı giriş yaptığında sistem atanmış container'ı kontrol eder ve gerekiyorsa ayağa kaldırır.
+Birden fazla instance kurun:
 
-### Admin Paneli
+```bash
+bash auto_deploy.sh --base-name bot --start-index 1 --end-index 5 --openrouter-api-key YOUR_API_KEY
+```
 
-`/admin` ekranı üzerinden:
+Var olan bir instance'ı güncelleyin:
 
-- yeni kullanıcı oluşturulabilir
-- mevcut kullanıcılar görüntülenebilir
-- kullanıcı oturumu başlatılabilir
-- ilişkili container durumu takip edilebilir
-- container başlatma ve durdurma işlemleri yapılabilir
+```bash
+bash update_openclaw.sh --instance-id 1
+```
 
-### Profil Sayfası
+## Sık Kullanılan Dosyalar
 
-Kullanıcı kendi hesabına ait bazı bilgileri güncelleyebilir ve aktif oturumuna yeniden erişebilir.
+- `env.base`: Varsayılan ortam değişkenleri
+- `logs/`: Deploy ve update logları
+- `openclaw_instances.db`: SQLite kayıtları
+- `scripts/docker/init-image-home.sh`: Container içi ilk yapılandırma akışı
 
-## Proje Yapısı
+## Kısa Notlar
 
-Öne çıkan dosyalar:
-
-- `app.py`: Flask uygulama başlangıcı
-- `routes/`: web route'ları
-- `services/`: iş mantığı ve Docker/OpenClaw entegrasyonları
-- `models/`: veritabanı erişim katmanı
-- `templates/`: HTML şablonları
-- `static/`: stil ve istemci tarafı dosyaları
-- `deploy_openclaw.sh`: yeni OpenClaw instance kurulum akışı
-- `update_openclaw.sh`: mevcut kurulumları güncelleme akışı
-
-## Notlar
-
-- Bu proje hafif ve pratik tutulmuştur; ağır bir orkestrasyon sistemi değildir.
-- Ana hedef, OpenClaw dağıtımını tek bir panel üzerinden yönetilebilir hale getirmektir.
-- Üretim ortamında ters proxy, TLS, erişim kontrolü ve secret yönetimi ayrıca ele alınmalıdır.
-
-## License
-
-Bu proje [LICENSE](LICENSE) dosyasındaki lisans koşulları ile sunulmaktadır.
+- Her instance için ayrı volume kullanılır; veriler container silinse bile korunabilir.
+- Portlar otomatik atanır ve veritabanında izlenir.
+- Güncelleme işlemi mevcut volume'u koruyup container'ı yeni image ile yeniden oluşturur.
+- Repo, ayrıntılı orkestrasyon yerine pratik ve sade operasyon akışı hedefler.
